@@ -7,12 +7,13 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const { sendOTPEmail } = require("../services/emailService");
+const Otp = require("../models/Otp");
 
 const registerUser = async (req, res) => {
   try {
-    const name = req.body.name?.trim();
-    const email = req.body.email?.trim().toLowerCase();
-    const password = req.body.password?.trim();
+    const name = req.body?.name?.trim();
+    const email = req.body?.email?.trim().toLowerCase();
+    const password = req.body?.password?.trim();
 
     if (!name || name.length === 0) {
       return res
@@ -81,8 +82,7 @@ const registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Create user
-    const user = await User.create({
+    const person = await User.create({
       name,
       email,
       password: hashedPassword,
@@ -102,6 +102,7 @@ const registerUser = async (req, res) => {
 
     // 6. Send response
     res.status(201).json({
+      success: "true",
       status: "pending",
       action: "VERIFY_OTP",
       message: "User created. Please verify your email",
@@ -127,7 +128,7 @@ const loginUser = async (req, res) => {
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Invalid email",
       });
     }
 
@@ -138,7 +139,7 @@ const loginUser = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email or password",
+        message: "User not found",
       });
     }
     if (user.status !== "verified") {
@@ -151,7 +152,7 @@ const loginUser = async (req, res) => {
     }
     // 4. Check password
     const isMatch = await bcrypt.compare(password, user.password);
-
+    console.log(isMatch);
     if (!isMatch) {
       return res.status(400).json({
         success: false,
@@ -232,7 +233,7 @@ const logoutUser = async (req, res) => {
 
 const resendOtp = async (req, res) => {
   try {
-    const email = req.body.email?.trim().toLowerCase();
+    const email = req.body?.email?.trim().toLowerCase();
 
     if (!email) {
       return res.status(400).json({

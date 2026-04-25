@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema(
       type: String, // optional but useful
     },
     status: {
-      type: string,
+      type: String,
       enum: ["pending", "verified"],
       default: "pending",
     },
