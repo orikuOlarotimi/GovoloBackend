@@ -23,8 +23,8 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: string,
-      enum: ["pending", "verified", "active"],
-      defauly: "pending",
+      enum: ["pending", "verified"],
+      default: "pending",
     },
   },
   { timestamps: true },
