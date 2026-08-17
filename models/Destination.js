@@ -11,16 +11,23 @@ const destinationSchema = new mongoose.Schema(
     description: {
       type: String,
       required: true,
+      trim: true,
     },
 
     location: {
       type: String,
       required: true,
+      trim: true,
     },
 
     price: {
       type: Number,
       required: true,
+    },
+    mainImage: {
+      type: String,
+      required: true,
+      trim: true,
     },
 
     images: [
@@ -37,12 +44,27 @@ const destinationSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-        },
-        visits: {
-        type: Number
+    },
+    visits: {
+      type: Number,
+      default: 0,
+    },
+    rating: {
+      average: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 5,
+      },
+
+      count: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
     },
   },
   { timestamps: true },
 );
 
-module.exports = mongoose.model("destination", )
+module.exports = mongoose.model("destination", destinationSchema);
