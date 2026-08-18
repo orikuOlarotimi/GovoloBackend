@@ -1,11 +1,7 @@
 const Destination = require("../models/Destination");
 // const upload = require("../config/multer")
-const {
-  buildSrc,
-  buildTransformationString,
-  upload,
-  getResponsiveImageAttributes,
-} = require("@imagekit/javascript");
+const imagekit = require("../config/imagekit")
+const verifyImageBuffer = require("../services/verifyImage")
 
 const getAllDestinations = async (req, res) => {
   try {
@@ -109,12 +105,26 @@ const addDestination = async (req, res) => {
     const mainImageFile = req.files?.mainImage?.[0];
     if (!mainImageFile) {
       errors.push("Main image is required");
-    }
+    } else {
+      const mainImageCheck = await verifyImageBuffer(mainImageFile.buffer);
 
+      if (!mainImageCheck.valid) {
+        errors.push(`Main image rejected: ${mainImageCheck.reason}`);
+      }
+    }
     // --- Gallery Images (optional, array) ---
     const galleryFiles = req.files?.images || [];
     if (galleryFiles.length > 10) {
       errors.push("You can upload a maximum of 10 gallery images");
+    }
+    for (const file of galleryFiles) {
+      const check = await verifyImageBuffer(file.buffer);
+      if (!check.valid) {
+        return res.status(400).json({
+          success: false,
+          message: `Gallery image "${file.originalname}" rejected: ${check.reason}`,
+        });
+      }
     }
 
     if (errors.length > 0) {
@@ -125,13 +135,34 @@ const addDestination = async (req, res) => {
       });
     }
 
+    const mainImageUpload = await imagekit.files.upload({
+      file: mainImageFile.buffer, // multer gives us a Buffer directly — no base64 conversion needed
+      fileName: mainImageFile.originalname,
+      folder: "/destinations",
+      useUniqueFileName: true, // avoids overwriting if two users upload "beach.jpg"
+    });
+
+    // --- Upload gallery images (if any) ---
+    const galleryUploads = await Promise.all(
+      galleryFiles.map((file) =>
+        imagekit.files.upload({
+          file: file.buffer,
+          fileName: file.originalname,
+          folder: "/destinations",
+          useUniqueFileName: true,
+        }),
+      ),
+    );
+
     const destination = await Destination.create({
       title: title.trim(),
       description: description.trim(),
       location: location.trim(),
       price: Number(price),
-      images: images ? images.map((img) => img.trim()) : [],
-      createdBy: req.user?._id
+      mainImage: mainImageUpload.url,
+      images: galleryUploads.map((img) => img.url),
+      createdBy: req.user?._id,
+      isPublished: true,
     });
 
     res.status(201).json({
@@ -154,7 +185,7 @@ const addDestination = async (req, res) => {
       message: "Something went wrong while creating the destination",
     });
   }
-};
+};  
 
 module.exports = {
   getAllDestinations,

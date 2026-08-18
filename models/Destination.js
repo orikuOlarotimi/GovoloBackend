@@ -67,4 +67,6 @@ const destinationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+destinationSchema.index({ "rating.average": -1 });
+
 module.exports = mongoose.model("destination", destinationSchema);
