@@ -42,7 +42,7 @@ const getTopDestinations = async (req, res) => {
     const destinations = await Destination.find({
       isPublished: true,
     })
-      .select("title location price images description rating")
+      .select("title location price images description rating mainImage")
       .sort({ "rating.average": -1 })
       .limit(8);
 
@@ -134,19 +134,23 @@ const addDestination = async (req, res) => {
         errors,
       });
     }
+    console.log("MAIN IMAGE FILE:", mainImageFile);
+    console.log("BUFFER EXISTS:", !!mainImageFile?.buffer);
+    console.log("BUFFER LENGTH:", mainImageFile?.buffer?.length);
 
     const mainImageUpload = await imagekit.files.upload({
-      file: mainImageFile.buffer, // multer gives us a Buffer directly — no base64 conversion needed
+      file: mainImageFile.buffer.toString("base64"), // multer gives us a Buffer directly — no base64 conversion needed
       fileName: mainImageFile.originalname,
       folder: "/destinations",
       useUniqueFileName: true, // avoids overwriting if two users upload "beach.jpg"
     });
+  
 
     // --- Upload gallery images (if any) ---
     const galleryUploads = await Promise.all(
       galleryFiles.map((file) =>
         imagekit.files.upload({
-          file: file.buffer,
+          file: file.buffer.toString("base64"),
           fileName: file.originalname,
           folder: "/destinations",
           useUniqueFileName: true,
@@ -179,7 +183,7 @@ const addDestination = async (req, res) => {
         errors: messages,
       });
     }
-
+    console.log(error)
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating the destination",
