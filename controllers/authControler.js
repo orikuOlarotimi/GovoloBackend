@@ -52,9 +52,10 @@ const registerUser = async (req, res) => {
     if (user && user.status === "pending") {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
+      const hashedOtp = await bcrypt.hash(otp, 10);
       await Otp.create({
         email,
-        otp,
+        otp: hashedOtp,
         expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       });
 
@@ -514,7 +515,10 @@ const verifyOTP = async (req, res) => {
     const isMatch = await bcrypt.compare(otp, otpRecord.otp);
 
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP"
+      });
     }
 
     // 4. Find user
