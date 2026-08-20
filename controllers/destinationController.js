@@ -139,14 +139,14 @@ const addDestination = async (req, res) => {
     console.log("BUFFER LENGTH:", mainImageFile?.buffer?.length);
 
     const mainImageUpload = await imagekit.files.upload({
-      file: mainImageFile.buffer.toString("base64"), // multer gives us a Buffer directly — no base64 conversion needed
+      file: mainImageFile.buffer.toString("base64"), 
       fileName: mainImageFile.originalname,
       folder: "/destinations",
-      useUniqueFileName: true, // avoids overwriting if two users upload "beach.jpg"
+      useUniqueFileName: true, 
     });
   
 
-    // --- Upload gallery images (if any) ---
+   
     const galleryUploads = await Promise.all(
       galleryFiles.map((file) =>
         imagekit.files.upload({
