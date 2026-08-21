@@ -10,11 +10,13 @@ app.use(express.json());
 const userRoutes = require("./routes/userRoutes")
 const destinationRoutes = require("./routes/destinationRoutes")
 const bookingRoutes = require("./routes/bookingRoutes")
+const testimonialRoutes = require("./routes/testimonialRoutes")
 
 app.use("/api/users", userRoutes)
 
 app.use("/api/destinations", destinationRoutes);
 app.use("/api/booking", bookingRoutes)
+app.use("/api/testimonial", testimonialRoutes)
 
 
 app.get("/", (req, res) => {
