@@ -1,5 +1,7 @@
-const Blog = require("../models/Blog");
+const Blog = require("../models/Blogs");
 const BlogClick = require("../models/BlogClick");
+const imagekit = require("../config/imagekit");
+const verifyImageBuffer = require("../services/verifyImage");
 
 const getAllBlogs = async (req, res) => {
   try {
@@ -114,5 +116,108 @@ const registerBlogClick = async (req, res) => {
   }
 };
 
+const createBlog = async (req, res) => {
+  try {
+    const { title, tag, details } = req.body;
+    const authorId = req.user?._id;
 
-module.exports = { getAllBlogs, registerBlogClick };
+    const errors = [];
+
+    // --- Auth check ---
+    if (!authorId) {
+      return res.status(401).json({
+        success: false,
+        message: "You must be logged in to create a blog post",
+      });
+    }
+
+    // --- Title ---
+    if (typeof title !== "string" || title.trim().length === 0) {
+      errors.push("Title is required and cannot be empty or whitespace");
+    } else if (title.trim().length < 3) {
+      errors.push("Title must be at least 3 characters long");
+    } else if (title.trim().length > 150) {
+      errors.push("Title cannot exceed 150 characters");
+    }
+
+    // --- Details ---
+    if (typeof details !== "string" || details.trim().length === 0) {
+      errors.push("Details is required and cannot be empty or whitespace");
+    } else if (details.trim().length < 20) {
+      errors.push("Details must be at least 20 characters long");
+    }
+
+    // --- Tag (optional) ---
+    if (tag !== undefined && tag !== null && tag !== "") {
+      if (typeof tag !== "string") {
+        errors.push("Tag must be a string");
+      } else if (tag.trim().length > 30) {
+        errors.push("Tag cannot exceed 30 characters");
+      }
+    }
+
+    // --- Image (required, single file) ---
+    const imageFile = req.file; // assuming upload.single("image") on the route
+    if (!imageFile) {
+      errors.push("A blog image is required");
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors,
+      });
+    }
+
+    // --- Verify the image is genuinely an image (magic-byte check) ---
+    const imageCheck = await verifyImageBuffer(imageFile.buffer);
+    if (!imageCheck.valid) {
+      return res.status(400).json({
+        success: false,
+        message: `Image rejected: ${imageCheck.reason}`,
+      });
+    }
+
+    // --- Upload to ImageKit ---
+    const imageUpload = await imagekit.files.upload({
+      file: imageFile.buffer.toString("base64"),
+      fileName: imageFile.originalname,
+      folder: "/blogs",
+      useUniqueFileName: true,
+    });
+
+    // --- Create ---
+    const blog = await Blog.create({
+      title: title.trim(),
+      image: imageUpload.url,
+      tag: tag && tag.trim().length > 0 ? tag.trim() : null,
+      details: details.trim(),
+      author: authorId,
+      isPublished: true,
+    });
+
+    const populatedBlog = await blog.populate("author", "name");
+
+    res.status(201).json({
+      success: true,
+      blog: populatedBlog,
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: messages,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while creating the blog post",
+    });
+  }
+};
+
+module.exports = { getAllBlogs, registerBlogClick, createBlog };
