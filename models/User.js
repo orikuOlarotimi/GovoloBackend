@@ -2,10 +2,19 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-    name: {
+    firstName: {
       type: String,
       required: true,
       trim: true,
+    },
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    dob: {
+      type: Date,
+      required: true,
     },
     email: {
       type: String,
@@ -14,12 +23,27 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    country: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
+      required: true,
+    },
     password: {
       type: String,
       required: true,
     },
     refreshToken: {
-      type: String, // optional but useful
+      type: String,
     },
     status: {
       type: String,
