@@ -7,6 +7,7 @@ const {
   loginUser,
   logoutUser,
   resendOtp,
+  resendResetOtp,
   forgotPassword,
   resetPassword,
   refreshTokenHandler,
@@ -23,6 +24,7 @@ router.post("/verify-otp", verifyOTP);
 router.post("/resend-otp", resendOtp);
 
 router.post("/verify-reset-otp", verifyResetOTP);
+router.post("/resend-reset-otp", resendResetOtp)
 
 
 // Password recovery

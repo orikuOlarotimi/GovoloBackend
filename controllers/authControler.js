@@ -333,6 +333,68 @@ const resendOtp = async (req, res) => {
   }
 };
 
+const resendResetOtp = async (req, res) => {
+  try {
+    const email = req.body?.email?.trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+    if (!emailRegex.test(email)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Invalid email format" });
+    }
+
+    const user = await User.findOne({ email });
+
+    // ❌ Don't reveal too much info
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "If the account exists, an OTP has been sent",
+      });
+    }
+
+    // Pending (unverified) users can't reset a password — they haven't
+    // confirmed the email/phone belongs to them yet
+    if (user.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Please verify your email before resetting your password",
+      });
+    }
+
+    // Delete old OTPs
+    await Otp.deleteMany({ email });
+
+    // Generate new OTP
+    const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(rawOtp, 10);
+
+    await Otp.create({
+      email,
+      otp: hashedOtp,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    await sendOTPEmail(email, rawOtp);
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP resent successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const forgotPassword = async (req, res) => {
   try {
     const email = req.body.email?.trim().toLowerCase();
@@ -694,16 +756,12 @@ const verifyResetOTP = async (req, res) => {
     // 9. Delete OTP(s) — one-time use, don't let it be replayed
     await Otp.deleteMany({ email });
 
-    // 10. Issue a short-lived reset token (NOT access/refresh tokens)
-    const resetToken = generateResetToken(user._id); // e.g. JWT, 10–15 min expiry
-
     // 11. Response
     return res.status(200).json({
       success: true,
       status: "otp_verified",
       action: "RESET_PASSWORD",
-      message: "OTP verified. You may now reset your password.",
-      resetToken,
+      message: "OTP verified. You may now reset your password."
     });
   } catch (error) {
     return res.status(500).json({
@@ -718,6 +776,7 @@ module.exports = {
   loginUser,
   logoutUser,
   resendOtp,
+  resendResetOtp,
   forgotPassword,
   resetPassword,
   refreshTokenHandler,
