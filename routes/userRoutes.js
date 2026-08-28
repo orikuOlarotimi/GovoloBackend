@@ -11,6 +11,7 @@ const {
   resetPassword,
   refreshTokenHandler,
   verifyOTP,
+  verifyResetOTP
 } = require("../controllers/authControler");
 
 router.post("/register", registerUser);
@@ -20,6 +21,9 @@ router.post("/logout", protect, logoutUser);
 // OTP
 router.post("/verify-otp", verifyOTP);
 router.post("/resend-otp", resendOtp);
+
+router.post("/verify-reset-otp", verifyResetOTP);
+
 
 // Password recovery
 router.post("/forgot-password", forgotPassword);

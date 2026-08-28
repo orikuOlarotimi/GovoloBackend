@@ -6,53 +6,96 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const nameRegex = /^[A-Za-z]+$/;
 const { sendOTPEmail } = require("../services/emailService");
 const Otp = require("../models/Otp");
 
+const calculateAge = require("../utils/calculateAge")
+
 const registerUser = async (req, res) => {
   try {
-    const name = req.body?.name?.trim();
+    const firstName = req.body?.firstName?.trim();
+    const lastName = req.body?.lastName?.trim();
     const email = req.body?.email?.trim().toLowerCase();
+    const dob = req.body?.dob.trim();
+    const city = req.body?.city?.trim();
+    const country = req.body?.country?.trim();
+    const gender = req.body?.gender.trim().toLowerCase();
     const password = req.body?.password?.trim();
 
-    if (!name || name.length === 0) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Name is required" });
-    }
-
-    if (!email || email.length === 0) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Email is required" });
-    }
-
-    if (!password || password.length === 0) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Password is required" });
-    }
-
-    if (password.length < 6) {
+    if (!firstName || firstName.length <= 1 || !nameRegex.test(firstName)) {
       return res.status(400).json({
         status: "error",
-        message: "Password must be at least 6 characters",
+        message:
+          "First name must be more than 1 letter and contain no numbers or symbols",
       });
     }
 
-    if (!emailRegex.test(email)) {
+    if (!lastName || lastName.length <= 1 || !nameRegex.test(lastName)) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Last name must be more than 1 letter and contain no numbers or symbols",
+      });
+    }
+
+    if (!email || !emailRegex.test(email)) {
       return res
         .status(400)
-        .json({ status: "error", message: "Invalid email format" });
+        .json({ status: "error", message: "Invalid email sequence" });
     }
+
+    if (!city || city.length <= 1 || !nameRegex.test(city)) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "City must be more than 1 letter and contain no numbers or symbols",
+      });
+    }
+
+    if (!country || country.length <= 1 || !nameRegex.test(country)) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Country must be more than 1 letter and contain no numbers or symbols",
+      });
+    }
+
+    if (!dob || isNaN(new Date(dob).getTime())) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Date of birth is required" });
+    }
+
+    if (calculateAge(dob) <= 16) {
+      return res.status(400).json({
+        status: "error",
+        message: "You must be older than 16 to sign up",
+      });
+    }
+
+    const allowedGenders = ["male", "female", "other", "prefer_not_to_say"];
+    if (!gender || !allowedGenders.includes(gender)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Please select a valid gender" });
+    }
+
+    if (!password || password.length <= 5) {
+      return res.status(400).json({
+        status: "error",
+        message: "Password must be more than 5 characters",
+      });
+    }
+
     // 2. Check if user exists
     let user = await User.findOne({ email });
 
-    // 🔁 CASE 1: User exists but NOT verified
+    // CASE 1: User exists but NOT verified
     if (user && user.status === "pending") {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
       const hashedOtp = await bcrypt.hash(otp, 10);
+
       await Otp.create({
         email,
         otp: hashedOtp,
@@ -69,7 +112,7 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // ❌ CASE 2: Already verified user
+    // CASE 2: Already verified user
     if (user && user.status === "verified") {
       return res.status(400).json({
         success: true,
@@ -83,17 +126,21 @@ const registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const person = await User.create({
-      name,
+    await User.create({
+      firstName,
+      lastName,
       email,
+      dob,
+      city,
+      country,
+      gender,
       password: hashedPassword,
       status: "pending",
     });
 
     const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // hash OTP
     const hashedOtp = await bcrypt.hash(rawOtp, 10);
+
     await Otp.create({
       email,
       otp: hashedOtp,
@@ -101,9 +148,8 @@ const registerUser = async (req, res) => {
     });
     await sendOTPEmail(email, rawOtp);
 
-    // 6. Send response
     res.status(201).json({
-      success: "true",
+      success: true,
       status: "pending",
       action: "VERIFY_OTP",
       message: "User created. Please verify your email",
@@ -117,6 +163,7 @@ const loginUser = async (req, res) => {
   try {
     const email = req.body.email?.trim().toLowerCase();
     const password = req.body.password?.trim();
+    const rememberMe = req.body.rememberMe === true; // coerce, don't trust truthy strings
 
     // 1. Validate input
     if (!email || !password) {
@@ -143,6 +190,7 @@ const loginUser = async (req, res) => {
         message: "User not found",
       });
     }
+
     if (user.status !== "verified") {
       return res.status(403).json({
         success: false,
@@ -151,6 +199,7 @@ const loginUser = async (req, res) => {
         message: "Please verify your account first",
       });
     }
+
     // 4. Check password
     const isMatch = await bcrypt.compare(password, user.password);
 
@@ -161,26 +210,18 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // 5. Check account status
-    if (user.status === "pending") {
-      return res.status(403).json({
-        success: false,
-        status: "pending",
-        action: "VERIFY_OTP",
-        message: "Please verify your email before logging in",
-      });
-    }
-
-    // 6. Generate tokens
+    // 5. Generate tokens
     const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+
+    const refreshTokenExpiry = rememberMe ? "30d" : "7d";
+    const refreshToken = generateRefreshToken(user._id, refreshTokenExpiry);
 
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
     user.refreshToken = hashedRefreshToken;
     await user.save();
 
-    // 7. Response
+    // 6. Response — raw refreshToken sent directly, no cookie
     return res.status(200).json({
       success: true,
       status: "verified",
@@ -573,6 +614,105 @@ const verifyOTP = async (req, res) => {
   }
 };
 
+const verifyResetOTP = async (req, res) => {
+  try {
+    const email = req.body.email?.trim().toLowerCase();
+    const otp = req.body.otp?.trim();
+
+    // 1. Validate input presence
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and OTP are required",
+      });
+    }
+
+    // 2. Validate email format
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email address",
+      });
+    }
+
+    // 3. Validate OTP format (adjust length to match how you generate it)
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP format",
+      });
+    }
+
+    // 4. Find user first — no point checking OTP for an account that doesn't exist
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email",
+      });
+    }
+
+    // 5. Block pending (unverified) users from resetting password
+    if (user.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        status: "pending",
+        action: "VERIFY_OTP",
+        message: "Please verify your email before resetting your password",
+      });
+    }
+
+    // 6. Find OTP record (latest one ideally)
+    const otpRecord = await Otp.findOne({ email }).sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
+    }
+
+    // 7. Check expiry
+    if (otpRecord.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP has expired",
+      });
+    }
+
+    // 8. Check OTP match
+    const isMatch = await bcrypt.compare(otp, otpRecord.otp);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+      });
+    }
+
+    // 9. Delete OTP(s) — one-time use, don't let it be replayed
+    await Otp.deleteMany({ email });
+
+    // 10. Issue a short-lived reset token (NOT access/refresh tokens)
+    const resetToken = generateResetToken(user._id); // e.g. JWT, 10–15 min expiry
+
+    // 11. Response
+    return res.status(200).json({
+      success: true,
+      status: "otp_verified",
+      action: "RESET_PASSWORD",
+      message: "OTP verified. You may now reset your password.",
+      resetToken,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -582,4 +722,5 @@ module.exports = {
   resetPassword,
   refreshTokenHandler,
   verifyOTP,
+  verifyResetOTP,
 };

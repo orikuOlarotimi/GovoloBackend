@@ -7,6 +7,7 @@ connectDB();
 app.use(express.json());
 const cookieParser = require("cookie-parser");
 const assignVisitorId = require("./midleware/visitorId");
+const cors = require("cors");
 
 const userRoutes = require("./routes/userRoutes")
 const destinationRoutes = require("./routes/destinationRoutes")
@@ -14,6 +15,12 @@ const bookingRoutes = require("./routes/bookingRoutes")
 const testimonialRoutes = require("./routes/testimonialRoutes")
 const blogRoutes = require("./routes/blogRoutes");
 
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  }),
+);
 
 app.use("/api/users", userRoutes)
 
