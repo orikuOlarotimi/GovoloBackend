@@ -1,6 +1,7 @@
 const {
   generateAccessToken,
   generateRefreshToken,
+  generateResetToken,
 } = require("../services/jwtServices");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -9,8 +10,10 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nameRegex = /^[A-Za-z]+$/;
 const { sendOTPEmail } = require("../services/emailService");
 const Otp = require("../models/Otp");
+const ResetToken = require("../models/ResetToken")
 
-const calculateAge = require("../utils/calculateAge")
+const calculateAge = require("../utils/calculateAge");
+
 
 const registerUser = async (req, res) => {
   try {
@@ -443,67 +446,107 @@ const forgotPassword = async (req, res) => {
 const resetPassword = async (req, res) => {
   try {
     const email = req.body.email?.trim().toLowerCase();
-    const otp = req.body.otp?.trim();
-    const newPassword = req.body.password?.trim();
+    const resetToken = req.body.resetToken?.trim();
+    const newPassword = req.body.newPassword?.trim();
 
-    if (!email || !otp || !newPassword) {
+    // 1. Presence checks
+    if (!email || !resetToken || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required",
+        message: "Email, reset token and new password are required",
       });
     }
 
-    if (newPassword < 6) {
+    // 2. Email format check
+    if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: "password must be more than 6 characters",
+        message: "Invalid email address",
       });
     }
 
-    const otpRecord = await Otp.findOne({ email }).sort({ createdAt: -1 });
-
-    if (!otpRecord) {
+    // 3. Password strength — keep this loose/basic since frontend owns the real rules,
+    // but never trust the client alone for something this sensitive
+    if (newPassword.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Invalid or expired OTP",
+        message: "Password must be at least 6 characters",
       });
     }
 
-    const isMatch = await bcrypt.compare(otp, otpRecord.otp);
+    // 4. Verify JWT signature + expiry first — cheapest check, no DB hit needed
+    let payload;
+    try {
+      payload = jwt.verify(resetToken, process.env.RESET_TOKEN_SECRET);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    if (payload.purpose !== "password_reset" || payload.email !== email) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid reset token",
+      });
+    }
+
+    // 5. Find user
+    const user = await User.findById(payload.userId);
+
+    if (!user || user.email !== email) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 6. Find the matching DB-stored record — this is what makes the token revocable/one-time-use
+    const tokenRecord = await ResetToken.findOne({ user: user._id });
+
+    if (!tokenRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    if (tokenRecord.expiresAt < new Date()) {
+      await ResetToken.deleteMany({ user: user._id });
+      return res.status(400).json({
+        success: false,
+        message: "Reset token has expired",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(resetToken, tokenRecord.tokenHash);
 
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP",
+        message: "Invalid reset token",
       });
     }
 
-    if (otpRecord.expiresAt < new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: "OTP expired",
-      });
-    }
-
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid request",
-      });
-    }
-
+    // 7. All checks passed — update password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
     user.password = hashedPassword;
+
+    // 8. Kill existing sessions — a password reset should log the user out everywhere
+    user.refreshToken = null;
+
     await user.save();
 
-    await Otp.deleteMany({ email });
+    // 9. Token is single-use — delete it now
+    await ResetToken.deleteMany({ user: user._id });
 
     return res.status(200).json({
       success: true,
-      message: "Password reset successful",
+      status: "reset_complete",
+      action: "LOGIN",
+      message:
+        "Password reset successfully. Please log in with your new password.",
     });
   } catch (error) {
     return res.status(500).json({
@@ -528,7 +571,7 @@ const refreshTokenHandler = async (req, res) => {
     // 1. Verify JWT
     let decoded;
     try {
-       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     } catch (err) {
       return res.status(401).json({
         success: false,
@@ -620,7 +663,7 @@ const verifyOTP = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP"
+        message: "Invalid OTP",
       });
     }
 
@@ -756,12 +799,25 @@ const verifyResetOTP = async (req, res) => {
     // 9. Delete OTP(s) — one-time use, don't let it be replayed
     await Otp.deleteMany({ email });
 
-    // 11. Response
+    await ResetToken.deleteMany({ user: user._id });
+
+    const rawResetToken = generateResetToken(user);
+    const hashedResetToken = await bcrypt.hash(rawResetToken, 10);
+
+    await ResetToken.create({
+      user: user._id,
+      email: user.email,
+      tokenHash: hashedResetToken,
+      expiresAt: new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000),
+    });
+
+    // 11. Response — raw token only ever sent here, in plaintext, once
     return res.status(200).json({
       success: true,
       status: "otp_verified",
       action: "RESET_PASSWORD",
-      message: "OTP verified. You may now reset your password."
+      message: "OTP verified. You may now reset your password.",
+      resetToken: rawResetToken,
     });
   } catch (error) {
     return res.status(500).json({
