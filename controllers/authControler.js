@@ -558,17 +558,15 @@ const resetPassword = async (req, res) => {
 
 const refreshTokenHandler = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
+    const refreshToken = req.cookies?.refreshToken;
 
-    if (!authHeader?.startsWith("Bearer")) {
+    if (!refreshToken) {
       return res.status(401).json({
         success: false,
         message: "No refresh token provided",
       });
     }
 
-    const refreshToken = authHeader.split(" ")[1];
-    // 1. Verify JWT
     let decoded;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
@@ -579,7 +577,6 @@ const refreshTokenHandler = async (req, res) => {
       });
     }
 
-    // 2. Find user
     const user = await User.findById(decoded.id);
 
     if (!user || !user.refreshToken) {
@@ -588,6 +585,7 @@ const refreshTokenHandler = async (req, res) => {
         message: "Session not found",
       });
     }
+
     if (user.status !== "verified") {
       return res.status(403).json({
         success: false,
@@ -595,7 +593,21 @@ const refreshTokenHandler = async (req, res) => {
       });
     }
 
-    // 3. Compare hashed token
+    // NEW: hard session ceiling check — this is the fix
+    if (
+      !user.refreshTokenExpiresAt ||
+      user.refreshTokenExpiresAt < new Date()
+    ) {
+      user.refreshToken = null;
+      user.refreshTokenExpiresAt = null;
+      await user.save();
+
+      return res.status(401).json({
+        success: false,
+        message: "Session expired. Please log in again",
+      });
+    }
+
     const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
 
     if (!isMatch) {
@@ -605,19 +617,25 @@ const refreshTokenHandler = async (req, res) => {
       });
     }
 
-    // 4. Generate new tokens (ROTATION)
+    // Rotation — new access + refresh token, SAME session ceiling (not extended)
     const newAccessToken = generateAccessToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);
-
     const hashedRefreshToken = await bcrypt.hash(newRefreshToken, 10);
 
     user.refreshToken = hashedRefreshToken;
+    // refreshTokenExpiresAt is intentionally left untouched here
     await user.save();
+
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       success: true,
       accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
     });
   } catch (error) {
     return res.status(500).json({

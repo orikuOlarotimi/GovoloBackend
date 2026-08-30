@@ -50,6 +50,10 @@ const userSchema = new mongoose.Schema(
       enum: ["pending", "verified"],
       default: "pending",
     },
+    refreshTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );
