@@ -3,6 +3,12 @@ const {
   generateRefreshToken,
   generateResetToken,
 } = require("../services/jwtServices");
+const {
+  ABSOLUTE_SESSION_DAYS_DEFAULT,
+  ABSOLUTE_SESSION_DAYS_REMEMBER_ME,
+  REFRESH_TOKEN_MAX_AGE_MS_DEFAULT,
+  REFRESH_TOKEN_MAX_AGE_MS_REMEMBER_ME,
+} = require("../config/constants");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
@@ -218,20 +224,42 @@ const loginUser = async (req, res) => {
 
     const refreshTokenExpiry = rememberMe ? "30d" : "7d";
     const refreshToken = generateRefreshToken(user._id, refreshTokenExpiry);
-
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
+    const absoluteSessionDays = rememberMe
+      ? ABSOLUTE_SESSION_DAYS_REMEMBER_ME
+      : ABSOLUTE_SESSION_DAYS_DEFAULT;
+
+    const cookieMaxAge = rememberMe
+      ? REFRESH_TOKEN_MAX_AGE_MS_REMEMBER_ME
+      : REFRESH_TOKEN_MAX_AGE_MS_DEFAULT;
+
     user.refreshToken = hashedRefreshToken;
+    user.refreshTokenExpiresAt = new Date(
+      Date.now() + absoluteSessionDays * 24 * 60 * 60 * 1000,
+    );
     await user.save();
 
-    // 6. Response — raw refreshToken sent directly, no cookie
+    // 6. Refresh token now goes ONLY in the httpOnly cookie
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: cookieMaxAge,
+    });
+
+    // 7. Response — no refreshToken in the body anymore
     return res.status(200).json({
       success: true,
       status: "verified",
       action: "ACCESS_GRANTED",
       message: "Login successful",
       accessToken,
-      refreshToken,
+      user: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -704,30 +732,40 @@ const verifyOTP = async (req, res) => {
         message: "User already verified. Please login.",
       });
     }
+
     // 6. Update user status
     user.status = "verified";
 
-    // 7. Generate tokens
+    // 7. Generate tokens — signup has no "remember me" concept, always use defaults
     const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
+    const refreshToken = generateRefreshToken(user._id); // default "7d" from generateRefreshToken's own signature
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
     user.refreshToken = hashedRefreshToken;
+    user.refreshTokenExpiresAt = new Date(
+      Date.now() + ABSOLUTE_SESSION_DAYS_DEFAULT * 24 * 60 * 60 * 1000,
+    );
 
     await user.save();
 
     // 8. Delete OTP(s)
     await Otp.deleteMany({ email });
 
-    // 9. Response
+    // 9. Refresh token goes ONLY in the httpOnly cookie now
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS_DEFAULT,
+    });
+
+    // 10. Response — no refreshToken, no userId; accessToken carries the id claim
     return res.status(200).json({
       success: true,
       status: "verified",
       action: "ACCESS_GRANTED",
       message: "Account verified successfully",
       accessToken,
-      refreshToken,
     });
   } catch (error) {
     return res.status(500).json({

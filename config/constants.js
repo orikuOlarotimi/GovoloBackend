@@ -1,0 +1,7 @@
+// config/constants.js
+module.exports = {
+  ABSOLUTE_SESSION_DAYS_DEFAULT: 30,
+  ABSOLUTE_SESSION_DAYS_REMEMBER_ME: 60,
+  REFRESH_TOKEN_MAX_AGE_MS_DEFAULT: 7 * 24 * 60 * 60 * 1000, // 7d, matches JWT
+  REFRESH_TOKEN_MAX_AGE_MS_REMEMBER_ME: 30 * 24 * 60 * 60 * 1000, // 30d, matches JWT
+};
