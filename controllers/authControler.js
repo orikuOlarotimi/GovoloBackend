@@ -563,6 +563,7 @@ const resetPassword = async (req, res) => {
 
     // 8. Kill existing sessions — a password reset should log the user out everywhere
     user.refreshToken = null;
+    user.refreshTokenExpiresAt = null;
 
     await user.save();
 
