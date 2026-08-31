@@ -884,6 +884,51 @@ const verifyResetOTP = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  try {
+    // assumes an auth middleware has already verified the access token
+    // and attached req.userId (adjust to match your actual middleware)
+    if (!req.user?.id || !mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+    const user = await User.findById(req.user.id).select(
+      "firstName lastName email status gender country city dob avatar",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        status: user.status,
+        gender: user.gender,
+        country: user.country,
+        city: user.city,
+        dob: user.dob,
+        avatar: user.avatar ?? null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
 module.exports = {
   registerUser,
   loginUser,
@@ -895,4 +940,5 @@ module.exports = {
   refreshTokenHandler,
   verifyOTP,
   verifyResetOTP,
+  getMe,
 };

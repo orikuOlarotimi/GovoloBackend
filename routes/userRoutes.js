@@ -12,7 +12,8 @@ const {
   resetPassword,
   refreshTokenHandler,
   verifyOTP,
-  verifyResetOTP
+  verifyResetOTP,
+  getMe,
 } = require("../controllers/authControler");
 
 router.post("/register", registerUser);
@@ -33,6 +34,7 @@ router.post("/reset-password", resetPassword);
 
 // Token
 router.post("/refresh-token", refreshTokenHandler);
+router.get("/me", protect, getMe )
 
 
 module.exports = router;
