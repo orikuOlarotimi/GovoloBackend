@@ -50,6 +50,10 @@ const userSchema = new mongoose.Schema(
       enum: ["pending", "verified"],
       default: "pending",
     },
+    avatar: {
+      type: String,
+      default: "https://icon-icons.com/icon/profile-user-avatar-people/219228",
+    },
     refreshTokenExpiresAt: {
       type: Date,
       default: null,

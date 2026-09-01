@@ -16,10 +16,9 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nameRegex = /^[A-Za-z]+$/;
 const { sendOTPEmail } = require("../services/emailService");
 const Otp = require("../models/Otp");
-const ResetToken = require("../models/ResetToken")
+const ResetToken = require("../models/ResetToken");
 
 const calculateAge = require("../utils/calculateAge");
-
 
 const registerUser = async (req, res) => {
   try {
@@ -259,6 +258,12 @@ const loginUser = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        status: user.status,
+        gender: user.gender,
+        country: user.country,
+        city: user.city,
+        dob: user.dob,
+        avatar: user.avatar ?? null,
       },
     });
   } catch (error) {
@@ -271,26 +276,46 @@ const loginUser = async (req, res) => {
 
 const logoutUser = async (req, res) => {
   try {
-    const userId = req.user?.id; // from auth middleware
+    const refreshToken = req.cookies?.refreshToken;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
+    // No cookie at all — nothing to log out of server-side,
+    // but still a "successful" logout from the client's perspective
+    if (!refreshToken) {
+      return res.status(200).json({
+        success: true,
+        message: "Logged out successfully",
       });
     }
 
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch (err) {
+      // Expired/invalid token — clear the cookie anyway, nothing more to do server-side
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+      });
+      return res.status(200).json({
+        success: true,
+        message: "Logged out successfully",
       });
     }
 
-    user.refreshToken = null;
-    await user.save();
+    const user = await User.findById(decoded.id);
+
+    if (user) {
+      user.refreshToken = null;
+      user.refreshTokenExpiresAt = null;
+      await user.save();
+    }
+
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
 
     return res.status(200).json({
       success: true,
@@ -731,6 +756,17 @@ const verifyOTP = async (req, res) => {
         status: "verified",
         action: "LOGIN",
         message: "User already verified. Please login.",
+        user: {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          status: user.status,
+          gender: user.gender,
+          country: user.country,
+          city: user.city,
+          dob: user.dob,
+          avatar: user.avatar ?? null,
+        },
       });
     }
 
@@ -926,8 +962,6 @@ const getMe = async (req, res) => {
     });
   }
 };
-
-
 
 module.exports = {
   registerUser,

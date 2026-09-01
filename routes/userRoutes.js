@@ -18,7 +18,7 @@ const {
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-router.post("/logout", protect, logoutUser);
+router.post("/logout",  logoutUser);
 
 // OTP
 router.post("/verify-otp", verifyOTP);
