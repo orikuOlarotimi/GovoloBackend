@@ -755,18 +755,7 @@ const verifyOTP = async (req, res) => {
         success: false,
         status: "verified",
         action: "LOGIN",
-        message: "User already verified. Please login.",
-        user: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          status: user.status,
-          gender: user.gender,
-          country: user.country,
-          city: user.city,
-          dob: user.dob,
-          avatar: user.avatar ?? null,
-        },
+        message: "User already verified. Please login."
       });
     }
 
@@ -803,6 +792,17 @@ const verifyOTP = async (req, res) => {
       action: "ACCESS_GRANTED",
       message: "Account verified successfully",
       accessToken,
+      user: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        status: user.status,
+        gender: user.gender,
+        country: user.country,
+        city: user.city,
+        dob: user.dob,
+        avatar: user.avatar ?? null,
+      }
     });
   } catch (error) {
     return res.status(500).json({
