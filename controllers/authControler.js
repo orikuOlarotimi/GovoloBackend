@@ -924,7 +924,7 @@ const getMe = async (req, res) => {
   try {
     // assumes an auth middleware has already verified the access token
     // and attached req.userId (adjust to match your actual middleware)
-    if (!req.user?.id || !mongoose.Types.ObjectId.isValid(req.user.id)) {
+    if (!req.user?.id ) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",

@@ -7,7 +7,14 @@ connectDB();
 app.use(express.json());
 const cookieParser = require("cookie-parser");
 const assignVisitorId = require("./midleware/visitorId");
+
 const cors = require("cors");
+app.use(cookieParser());
+app.use(assignVisitorId);
+
+
+
+
 
 const userRoutes = require("./routes/userRoutes")
 const destinationRoutes = require("./routes/destinationRoutes")
@@ -27,8 +34,7 @@ app.use("/api/users", userRoutes)
 app.use("/api/destinations", destinationRoutes);
 app.use("/api/booking", bookingRoutes)
 app.use("/api/testimonial", testimonialRoutes)
-app.use(cookieParser());
-app.use(assignVisitorId);
+
 
 app.use("/api/blogs", blogRoutes);
 
