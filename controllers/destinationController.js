@@ -42,7 +42,7 @@ const getTopDestinations = async (req, res) => {
     const destinations = await Destination.find({
       isPublished: true,
     })
-      .select("title location price images description rating mainImage")
+      .select("title location price images description rating mainImage visits")
       .sort({ "rating.average": -1 })
       .limit(8);
 
