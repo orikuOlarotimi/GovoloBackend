@@ -191,6 +191,8 @@ const addDestination = async (req, res) => {
   }
 };  
 
+ // delete destinations and update destinations to be created 
+
 module.exports = {
   getAllDestinations,
   getTopDestinations,
