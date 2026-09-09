@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema(
     refreshToken: {
       type: String,
     },
+    role: {
+      type: String,
+      default: "normal user"
+    },
     status: {
       type: String,
       enum: ["pending", "verified"],

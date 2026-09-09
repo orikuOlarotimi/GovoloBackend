@@ -3,14 +3,27 @@ const Destination = require("../models/Destination");
 
 const getAllTestimonials = async (req, res) => {
   try {
+    // 1. Parse and sanitize query params
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 4;
+    const skip = (page - 1) * limit;
+
+    // 2. Fetch testimonials with pagination
     const testimonials = await Testimonial.find({})
       .sort({ createdAt: -1 }) // most recent testimonials first
-      .limit(4)
-      .populate("user", "name") 
-      .populate("destination", "title location mainImage");
+      .skip(skip)
+      .limit(limit)
+      .populate("user", "name role city country ")
+      .populate("destination", "title location  ");
+
+    // 3. Total count (for frontend pagination)
+    const total = await Testimonial.countDocuments({});
 
     res.status(200).json({
       success: true,
+      page,
+      totalPages: Math.ceil(total / limit),
+      total,
       count: testimonials.length,
       testimonials,
     });
