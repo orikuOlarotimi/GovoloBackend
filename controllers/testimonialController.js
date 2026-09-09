@@ -13,8 +13,8 @@ const getAllTestimonials = async (req, res) => {
       .sort({ createdAt: -1 }) // most recent testimonials first
       .skip(skip)
       .limit(limit)
-      .populate("user", "name role city country ")
-      .populate("destination", "title location  ");
+      .populate("user", "firstName lastName role city country avatar")
+      .populate("destination", "title location ");
 
     // 3. Total count (for frontend pagination)
     const total = await Testimonial.countDocuments({});
