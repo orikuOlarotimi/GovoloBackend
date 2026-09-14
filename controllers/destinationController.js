@@ -134,9 +134,9 @@ const addDestination = async (req, res) => {
         errors,
       });
     }
-    console.log("MAIN IMAGE FILE:", mainImageFile);
-    console.log("BUFFER EXISTS:", !!mainImageFile?.buffer);
-    console.log("BUFFER LENGTH:", mainImageFile?.buffer?.length);
+    // console.log("MAIN IMAGE FILE:", mainImageFile);
+    // console.log("BUFFER EXISTS:", !!mainImageFile?.buffer);
+    // console.log("BUFFER LENGTH:", mainImageFile?.buffer?.length);
 
     const mainImageUpload = await imagekit.files.upload({
       file: mainImageFile.buffer.toString("base64"), 
@@ -191,7 +191,7 @@ const addDestination = async (req, res) => {
   }
 };  
 
- // delete destinations and update destinations to be created 
+// delete destinations and update destinations to be created 
 
 module.exports = {
   getAllDestinations,
