@@ -23,7 +23,7 @@ const testimonialSchema = new mongoose.Schema(
 
     destination: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Destination",
+      ref: "destination",
       required: true,
     },
   },

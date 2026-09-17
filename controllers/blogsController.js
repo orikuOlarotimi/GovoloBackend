@@ -119,7 +119,7 @@ const registerBlogClick = async (req, res) => {
 const createBlog = async (req, res) => {
   try {
     const { title, tag, details } = req.body;
-    const authorId = req.user?._id;
+    const authorId = req.user?.id;
 
     const errors = [];
 

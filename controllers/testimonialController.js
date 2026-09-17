@@ -1,5 +1,6 @@
 const Testimonial = require("../models/Testimonial")
 const Destination = require("../models/Destination");
+const User = require("../models/User")
 
 const getAllTestimonials = async (req, res) => {
   try {
@@ -38,7 +39,7 @@ const getAllTestimonials = async (req, res) => {
 const createTestimonial = async (req, res) => {
   try {
     const { destinationId, rating, comment } = req.body;
-    const userId = req.user?._id;
+    const userId = req.user?.id;
 
     const errors = [];
 
@@ -49,9 +50,9 @@ const createTestimonial = async (req, res) => {
         message: "You must be logged in to leave a rating",
       });
     }
-
+    const user = await User.findById( userId ).select("status");
     // --- Only verified users can leave testimonials ---
-    if (req.user.status !== "verified") {
+    if (user.status !== "verified") {
       return res.status(403).json({
         success: false,
         message: "Only verified users can leave a rating",
@@ -174,6 +175,7 @@ const createTestimonial = async (req, res) => {
       success: false,
       message: "Something went wrong while submitting the rating",
     });
+    console.log(error)
   }
 };
 
