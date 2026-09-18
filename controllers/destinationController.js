@@ -7,13 +7,13 @@ const getAllDestinations = async (req, res) => {
   try {
     // 1. Pagination params
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 6;
+    const limit = parseInt(req.query.limit) || 10;
 
     const skip = (page - 1) * limit;
 
     // 2. Query (only published)
     const destinations = await Destination.find({ isPublished: true })
-      .select("title location price images description") // minimal fields
+      .select("title location price mainImage description visits rating ") // minimal fields
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

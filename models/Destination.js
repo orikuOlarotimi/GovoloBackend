@@ -24,6 +24,7 @@ const destinationSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    
     mainImage: {
       type: String,
       required: true,
