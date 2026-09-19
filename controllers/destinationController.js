@@ -191,10 +191,46 @@ const addDestination = async (req, res) => {
   }
 };  
 
+const getDestination = async (req, res) => {
+  try {
+    const id = req.params.id?.trim();
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid destination id",
+      });
+    }
+
+    const destination = await Destination.findOne({
+      _id: id,
+      isPublished: true,
+    }).populate("createdBy", "name email"); // adjust field list to your User schema
+
+    if (!destination) {
+      return res.status(404).json({
+        success: false,
+        message: "Destination not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      destination,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
 // delete destinations and update destinations to be created 
 
 module.exports = {
   getAllDestinations,
   getTopDestinations,
   addDestination,
+  getDestination,
 };

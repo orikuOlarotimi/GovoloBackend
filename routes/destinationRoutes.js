@@ -7,11 +7,14 @@ const {
   getAllDestinations,
   getTopDestinations,
   addDestination,
+  getDestination
 } = require("../controllers/destinationController");
 
 router.get("/", getAllDestinations);
 
 router.get("/top-destinations", getTopDestinations);
+
+router.get("/destination", getDestination);
 
 router.post(
   "/",
