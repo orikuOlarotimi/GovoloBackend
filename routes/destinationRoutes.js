@@ -14,7 +14,7 @@ router.get("/", getAllDestinations);
 
 router.get("/top-destinations", getTopDestinations);
 
-router.get("/destination", getDestination);
+router.get("/:id", getDestination);
 
 router.post(
   "/",

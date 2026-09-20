@@ -2,6 +2,7 @@ const Destination = require("../models/Destination");
 // const upload = require("../config/multer")
 const imagekit = require("../config/imagekit")
 const verifyImageBuffer = require("../services/verifyImage")
+const mongoose = require("mongoose");
 
 const getAllDestinations = async (req, res) => {
   try {
@@ -219,6 +220,7 @@ const getDestination = async (req, res) => {
       destination,
     });
   } catch (error) {
+    console.log(error)
     res.status(500).json({
       success: false,
       message: "Something went wrong",
