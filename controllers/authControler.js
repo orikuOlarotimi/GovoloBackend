@@ -17,6 +17,9 @@ const nameRegex = /^[A-Za-z]+$/;
 const { sendOTPEmail } = require("../services/emailService");
 const Otp = require("../models/Otp");
 const ResetToken = require("../models/ResetToken");
+const AdminRequest = require("../models/AdminRequest");
+
+
 
 const calculateAge = require("../utils/calculateAge");
 
@@ -963,6 +966,43 @@ const getMe = async (req, res) => {
   }
 };
 
+const requestAdminAccess = async (req, res) => {
+  try {
+    const userId = req.user?._id; // assuming your auth middleware attaches req.user
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated",
+      });
+    }
+
+    const existing = await AdminRequest.findOne({
+      user: userId,
+      status: "pending",
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "You already have a pending admin request",
+      });
+    }
+
+    const request = await AdminRequest.create({ user: userId });
+
+    res.status(201).json({
+      success: true,
+      request,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -975,4 +1015,5 @@ module.exports = {
   verifyOTP,
   verifyResetOTP,
   getMe,
+  requestAdminAccess,
 };
