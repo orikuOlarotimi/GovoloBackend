@@ -38,6 +38,11 @@ const userSchema = new mongoose.Schema(
       enum: ["male", "female", "other", "prefer_not_to_say"],
       required: true,
     },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
     password: {
       type: String,
       required: true,
@@ -47,7 +52,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      default: "normal user"
+      default: "normal user",
     },
     status: {
       type: String,
