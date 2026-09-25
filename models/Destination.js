@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const destinationSchema = new mongoose.Schema(
   {
@@ -22,18 +22,67 @@ const destinationSchema = new mongoose.Schema(
 
     price: {
       type: Number,
-      required: true,
+      required: true, // standard room / default price, shown on cards and listings
     },
-    
+
     mainImage: {
       type: String,
       required: true,
       trim: true,
     },
 
-    images: [
+    images: {
+      type: [String],
+      validate: {
+        validator: (arr) => arr.length <= 8,
+        message: "A destination can have at most 8 gallery images",
+      },
+    },
+
+    duration: {
+      type: String,
+      trim: true, // e.g. "5 Days / 4 Nights"
+    },
+
+    groupSize: {
+      min: { type: Number },
+      max: { type: Number },
+    },
+
+    tripHighlights: [
       {
-        type: String,
+        title: { type: String, trim: true },
+        description: { type: String, trim: true },
+      },
+    ],
+
+    included: [{ type: String, trim: true }],
+
+    notIncluded: [{ type: String, trim: true }],
+
+    amenities: [{ type: String, trim: true }],
+
+    itinerary: [
+      {
+        day: { type: Number, required: true },
+        title: { type: String, trim: true, required: true },
+        description: { type: String, trim: true },
+      },
+    ],
+
+    roomTypes: [
+      {
+        name: { type: String, trim: true, required: true },
+        description: { type: String, trim: true },
+        price: { type: Number, required: true },
+      },
+    ],
+
+    addOns: [
+      {
+        name: { type: String, trim: true, required: true },
+        price: { type: Number, required: true },
+        unit: { type: String, trim: true, default: "/night" },
       },
     ],
 
@@ -46,10 +95,12 @@ const destinationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
     visits: {
       type: Number,
       default: 0,
     },
+
     rating: {
       average: {
         type: Number,

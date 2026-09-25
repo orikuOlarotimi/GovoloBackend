@@ -62,10 +62,49 @@ const getTopDestinations = async (req, res) => {
 
 const addDestination = async (req, res) => {
   try {
-    const { title, description, location, price, images, mainImage } =
-      req.body;
+    // --- Auth / role check FIRST — before anything else runs ---
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "You must be logged in to perform this action",
+      });
+    }
+
+    if (req.user.rolePrivilege !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to create a destination",
+      });
+    }
+
+    const {
+      title,
+      description,
+      location,
+      price,
+      duration,
+      groupSize, // expected as JSON string: {"min": 2, "max": 12}
+      tripHighlights, // JSON string: [{ title, description }]
+      included, // JSON string: string[]
+      notIncluded, // JSON string: string[]
+      amenities, // JSON string: string[]
+      itinerary, // JSON string: [{ day, title, description }]
+      roomTypes, // JSON string: [{ name, description, price }]
+      addOns, // JSON string: [{ name, price, unit }]
+    } = req.body;
 
     const errors = [];
+
+    // --- Helper: safely parse a JSON field from multipart form data ---
+    function parseJsonField(raw, fieldName, fallback) {
+      if (raw === undefined || raw === null || raw === "") return fallback;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        errors.push(`${fieldName} must be valid JSON`);
+        return fallback;
+      }
+    }
 
     // --- Title ---
     if (typeof title !== "string" || title.trim().length === 0) {
@@ -88,11 +127,12 @@ const addDestination = async (req, res) => {
       errors.push("Location is required and cannot be empty or whitespace");
     }
 
-    // --- Price ---
+    // --- Price (this is the Standard Room price) ---
+    let numericPrice;
     if (price === undefined || price === null || price === "") {
       errors.push("Price is required");
     } else {
-      const numericPrice = Number(price);
+      numericPrice = Number(price);
       if (Number.isNaN(numericPrice)) {
         errors.push("Price must be a valid number");
       } else if (numericPrice <= 0) {
@@ -102,52 +142,162 @@ const addDestination = async (req, res) => {
       }
     }
 
-    // --- Images (optional, but validate shape if provided) ---
+    // --- Duration (optional) ---
+    if (duration !== undefined && typeof duration !== "string") {
+      errors.push("Duration must be a string");
+    }
+
+    // --- Group size (optional, but validate shape if provided) ---
+    const parsedGroupSize = parseJsonField(groupSize, "Group size", null);
+    if (parsedGroupSize) {
+      const { min, max } = parsedGroupSize;
+      if (min !== undefined && (typeof min !== "number" || min < 1)) {
+        errors.push("Group size minimum must be a positive number");
+      }
+      if (max !== undefined && (typeof max !== "number" || max < 1)) {
+        errors.push("Group size maximum must be a positive number");
+      }
+      if (typeof min === "number" && typeof max === "number" && min > max) {
+        errors.push("Group size minimum cannot be greater than maximum");
+      }
+    }
+
+    // --- Trip highlights (required — at least one, matching the frontend) ---
+    const parsedHighlights = parseJsonField(
+      tripHighlights,
+      "Trip highlights",
+      [],
+    );
+    if (!Array.isArray(parsedHighlights) || parsedHighlights.length === 0) {
+      errors.push("At least one trip highlight is required");
+    } else {
+      parsedHighlights.forEach((h, i) => {
+        if (!h?.title?.trim() || !h?.description?.trim()) {
+          errors.push(
+            `Trip highlight #${i + 1} must have a title and description`,
+          );
+        }
+      });
+    }
+
+    // --- Included / Not Included / Amenities (optional lists) ---
+    const parsedIncluded = parseJsonField(included, "Included list", []);
+    const parsedNotIncluded = parseJsonField(
+      notIncluded,
+      "Not included list",
+      [],
+    );
+    const parsedAmenities = parseJsonField(amenities, "Amenities list", []);
+
+    [
+      ["Included list", parsedIncluded],
+      ["Not included list", parsedNotIncluded],
+      ["Amenities list", parsedAmenities],
+    ].forEach(([label, arr]) => {
+      if (!Array.isArray(arr)) {
+        errors.push(`${label} must be an array`);
+      } else if (arr.some((item) => typeof item !== "string" || !item.trim())) {
+        errors.push(`${label} cannot contain empty entries`);
+      }
+    });
+
+    // --- Itinerary (required — at least one day, matching the frontend) ---
+    const parsedItinerary = parseJsonField(itinerary, "Itinerary", []);
+    if (!Array.isArray(parsedItinerary) || parsedItinerary.length === 0) {
+      errors.push("At least one itinerary day is required");
+    } else {
+      parsedItinerary.forEach((d, i) => {
+        if (typeof d?.day !== "number") {
+          errors.push(`Itinerary day #${i + 1} must have a valid day number`);
+        }
+        if (!d?.title?.trim()) {
+          errors.push(`Itinerary day #${i + 1} must have a title`);
+        }
+      });
+    }
+
+    // --- Room types (required — Standard Room always exists, price must match top-level price) ---
+    const parsedRoomTypes = parseJsonField(roomTypes, "Room types", []);
+    if (!Array.isArray(parsedRoomTypes) || parsedRoomTypes.length === 0) {
+      errors.push("At least one room type is required");
+    } else {
+      const standard = parsedRoomTypes[0];
+      if (!standard || standard.name !== "Standard Room") {
+        errors.push("The first room type must be Standard Room");
+      } else if (
+        numericPrice !== undefined &&
+        standard.price !== numericPrice
+      ) {
+        errors.push("Standard Room price must match the destination price");
+      }
+
+      parsedRoomTypes.forEach((r, i) => {
+        if (!r?.name?.trim()) {
+          errors.push(`Room type #${i + 1} must have a name`);
+        }
+        if (typeof r?.price !== "number" || r.price <= 0) {
+          errors.push(`Room type #${i + 1} must have a price greater than 0`);
+        }
+      });
+    }
+
+    // --- Add-ons (optional, but validate shape if provided) ---
+    const parsedAddOns = parseJsonField(addOns, "Add-ons", []);
+    if (!Array.isArray(parsedAddOns)) {
+      errors.push("Add-ons must be an array");
+    } else {
+      parsedAddOns.forEach((a, i) => {
+        if (!a?.name?.trim()) {
+          errors.push(`Add-on #${i + 1} must have a name`);
+        }
+        if (typeof a?.price !== "number" || a.price <= 0) {
+          errors.push(`Add-on #${i + 1} must have a price greater than 0`);
+        }
+      });
+    }
+
+    // --- Main image ---
     const mainImageFile = req.files?.mainImage?.[0];
     if (!mainImageFile) {
       errors.push("Main image is required");
     } else {
       const mainImageCheck = await verifyImageBuffer(mainImageFile.buffer);
-
       if (!mainImageCheck.valid) {
         errors.push(`Main image rejected: ${mainImageCheck.reason}`);
       }
     }
-    // --- Gallery Images (optional, array) ---
+
+    // --- Gallery images (optional, max 8 — matches schema cap) ---
     const galleryFiles = req.files?.images || [];
-    if (galleryFiles.length > 10) {
-      errors.push("You can upload a maximum of 10 gallery images");
+    if (galleryFiles.length > 8) {
+      errors.push("You can upload a maximum of 8 gallery images");
     }
     for (const file of galleryFiles) {
       const check = await verifyImageBuffer(file.buffer);
       if (!check.valid) {
-        return res.status(400).json({
-          success: false,
-          message: `Gallery image "${file.originalname}" rejected: ${check.reason}`,
-        });
+        errors.push(
+          `Gallery image "${file.originalname}" rejected: ${check.reason}`,
+        );
       }
     }
 
+    // --- Bail out if anything failed, with a guaranteed non-empty message ---
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "Validation failed",
+        message: errors[0], // first error as the headline message for a toast
         errors,
       });
     }
-    // console.log("MAIN IMAGE FILE:", mainImageFile);
-    // console.log("BUFFER EXISTS:", !!mainImageFile?.buffer);
-    // console.log("BUFFER LENGTH:", mainImageFile?.buffer?.length);
 
+    // --- Uploads (only reached once every check above has passed) ---
     const mainImageUpload = await imagekit.files.upload({
-      file: mainImageFile.buffer.toString("base64"), 
+      file: mainImageFile.buffer.toString("base64"),
       fileName: mainImageFile.originalname,
       folder: "/destinations",
-      useUniqueFileName: true, 
+      useUniqueFileName: true,
     });
-  
 
-   
     const galleryUploads = await Promise.all(
       galleryFiles.map((file) =>
         imagekit.files.upload({
@@ -163,10 +313,19 @@ const addDestination = async (req, res) => {
       title: title.trim(),
       description: description.trim(),
       location: location.trim(),
-      price: Number(price),
+      price: numericPrice,
+      duration: duration?.trim(),
+      groupSize: parsedGroupSize || undefined,
+      tripHighlights: parsedHighlights,
+      included: parsedIncluded,
+      notIncluded: parsedNotIncluded,
+      amenities: parsedAmenities,
+      itinerary: parsedItinerary,
+      roomTypes: parsedRoomTypes,
+      addOns: parsedAddOns,
       mainImage: mainImageUpload.url,
       images: galleryUploads.map((img) => img.url),
-      createdBy: req.user?._id,
+      createdBy: req.user._id,
       isPublished: true,
     });
 
@@ -180,17 +339,19 @@ const addDestination = async (req, res) => {
       const messages = Object.values(error.errors).map((e) => e.message);
       return res.status(400).json({
         success: false,
-        message: "Validation failed",
+        message: messages[0] || "Validation failed", // never empty
         errors: messages,
       });
     }
-    console.log(error)
+
+    console.log(error);
     res.status(500).json({
       success: false,
+      // never send an empty/undefined message to the frontend toast
       message: "Something went wrong while creating the destination",
     });
   }
-};  
+};
 
 const getDestination = async (req, res) => {
   try {
