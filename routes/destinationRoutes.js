@@ -21,7 +21,7 @@ router.post(
   protect,
   upload.fields([
     { name: "mainImage", maxCount: 1 },
-    { name: "images", maxCount: 10 },
+    { name: "images", maxCount: 8 },
   ]),
   (err, req, res, next) => {
     if (err) {

@@ -35,7 +35,7 @@ app.use("/api/destinations", destinationRoutes);
 app.use("/api/booking", bookingRoutes)
 app.use("/api/testimonial", testimonialRoutes)
 
-
+ 
 app.use("/api/blogs", blogRoutes);
 
 
