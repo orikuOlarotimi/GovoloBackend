@@ -7,15 +7,16 @@ const {
   getAllDestinations,
   getTopDestinations,
   addDestination,
-  getDestination
+  getDestination,
+  getMyDestinations
 } = require("../controllers/destinationController");
 
 router.get("/", getAllDestinations);
 
 router.get("/top-destinations", getTopDestinations);
+router.get("/mine", protect, getMyDestinations);
 
 router.get("/:id", getDestination);
-
 router.post(
   "/",
   protect,

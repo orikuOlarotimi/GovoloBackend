@@ -21,6 +21,8 @@ const destinationRoutes = require("./routes/destinationRoutes")
 const bookingRoutes = require("./routes/bookingRoutes")
 const testimonialRoutes = require("./routes/testimonialRoutes")
 const blogRoutes = require("./routes/blogRoutes");
+const packageRoutes = require("./routes/packageRoutes")
+
 
 app.use(
   cors({
@@ -35,7 +37,7 @@ app.use("/api/destinations", destinationRoutes);
 app.use("/api/booking", bookingRoutes)
 app.use("/api/testimonial", testimonialRoutes)
 
- 
+app.use("/api/package", packageRoutes)
 app.use("/api/blogs", blogRoutes);
 
 

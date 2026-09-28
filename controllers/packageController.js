@@ -169,4 +169,4 @@ const addPackage = async (req, res) => {
   }
 };
 
-module.exports = addPackage;
+module.exports = {addPackage};

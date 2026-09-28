@@ -3,6 +3,9 @@ const Destination = require("../models/Destination");
 const imagekit = require("../config/imagekit")
 const verifyImageBuffer = require("../services/verifyImage")
 const mongoose = require("mongoose");
+const User = require("../models/User")
+
+
 const isBlank = (v) =>
   v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
@@ -71,8 +74,20 @@ const addDestination = async (req, res) => {
         message: "You must be logged in to perform this action",
       });
     }
+    // console.log(req.user.rolePrivilege);
+    // console.log(req.user);
+    const user = await User.findById(req.user.id)
 
-    if (req.user.rolePrivilege !== "admin") {
+    if (!user) {
+      return res.status(401).json(
+        {
+          success: false,
+          message: "user not found"
+        }
+      )
+    }
+
+    if (user.rolePrivilege !== "admin") {
       return res.status(403).json({
         success: false,
         message: "You do not have permission to create a destination",
@@ -389,7 +404,7 @@ const addDestination = async (req, res) => {
       groupSize: cleanGroupSize,
       roomTypes: cleanRoomTypes,
       mainImage: mainImageUpload.url,
-      createdBy: req.user._id,
+      createdBy: req.user.id,
       isPublished: true,
     };
 
@@ -464,6 +479,56 @@ const getDestination = async (req, res) => {
   }
 };
 
+const getMyDestinations = async (req, res) => {
+  try {
+    // --- 1. Did the auth middleware attach anything from the token? ---
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "You must be logged in to perform this action",
+      });
+    }
+
+    // --- 2. Does that user actually exist in the database? ---
+    const user = await User.findById(userId).select("rolePrivilege");
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Account not found. Please log in again",
+      });
+    }
+
+    // --- 3. Role check, using the database record rather than the token ---
+    if (user.rolePrivilege !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to view this",
+      });
+    }
+
+    // --- 4. Only this admin's published destinations (packages require both) ---
+    const destinations = await Destination.find({
+      createdBy: user._id,
+      isPublished: true,
+    })
+      .select("title location mainImage price")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: destinations.length,
+      destinations, // [] when the admin has none
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching your destinations",
+    });
+  }
+};
 // delete destinations and update destinations to be created 
 
 module.exports = {
@@ -471,4 +536,5 @@ module.exports = {
   getTopDestinations,
   addDestination,
   getDestination,
+  getMyDestinations,
 };
