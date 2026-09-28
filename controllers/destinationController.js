@@ -3,6 +3,8 @@ const Destination = require("../models/Destination");
 const imagekit = require("../config/imagekit")
 const verifyImageBuffer = require("../services/verifyImage")
 const mongoose = require("mongoose");
+const isBlank = (v) =>
+  v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
 const getAllDestinations = async (req, res) => {
   try {
@@ -62,7 +64,7 @@ const getTopDestinations = async (req, res) => {
 
 const addDestination = async (req, res) => {
   try {
-    // --- Auth / role check FIRST — before anything else runs ---
+    // --- Auth / role check first ---
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -83,21 +85,22 @@ const addDestination = async (req, res) => {
       location,
       price,
       duration,
-      groupSize, // expected as JSON string: {"min": 2, "max": 12}
+      groupSize, // JSON string: {"min": 2, "max": 12}
       tripHighlights, // JSON string: [{ title, description }]
       included, // JSON string: string[]
       notIncluded, // JSON string: string[]
       amenities, // JSON string: string[]
-      itinerary, // JSON string: [{ day, title, description }]
+      itinerary, // JSON string: [{ title, description }]
       roomTypes, // JSON string: [{ name, description, price }]
       addOns, // JSON string: [{ name, price, unit }]
     } = req.body;
 
     const errors = [];
 
-    // --- Helper: safely parse a JSON field from multipart form data ---
+    // --- Helpers ---
     function parseJsonField(raw, fieldName, fallback) {
-      if (raw === undefined || raw === null || raw === "") return fallback;
+      if (isBlank(raw)) return fallback;
+      if (typeof raw !== "string") return raw;
       try {
         return JSON.parse(raw);
       } catch {
@@ -105,6 +108,22 @@ const addDestination = async (req, res) => {
         return fallback;
       }
     }
+
+    // Returns trimmed, non-blank strings only
+    function cleanStringList(raw, label) {
+      const arr = parseJsonField(raw, label, []);
+      if (!Array.isArray(arr)) {
+        errors.push(`${label} must be an array`);
+        return [];
+      }
+      if (arr.some((i) => !isBlank(i) && typeof i !== "string")) {
+        errors.push(`${label} must only contain text`);
+        return [];
+      }
+      return arr.filter((i) => !isBlank(i)).map((i) => i.trim());
+    }
+
+    // ===== REQUIRED FIELDS =====
 
     // --- Title ---
     if (typeof title !== "string" || title.trim().length === 0) {
@@ -127,131 +146,96 @@ const addDestination = async (req, res) => {
       errors.push("Location is required and cannot be empty or whitespace");
     }
 
-    // --- Price (this is the Standard Room price) ---
+    // --- Price (Standard Room price) ---
     let numericPrice;
-    if (price === undefined || price === null || price === "") {
+    if (isBlank(price)) {
       errors.push("Price is required");
     } else {
       numericPrice = Number(price);
-      if (Number.isNaN(numericPrice)) {
+      if (!Number.isFinite(numericPrice)) {
         errors.push("Price must be a valid number");
+        numericPrice = undefined;
       } else if (numericPrice <= 0) {
         errors.push("Price must be greater than 0");
-      } else if (!Number.isFinite(numericPrice)) {
-        errors.push("Price must be a finite number");
       }
     }
 
-    // --- Duration (optional) ---
-    if (duration !== undefined && typeof duration !== "string") {
-      errors.push("Duration must be a string");
-    }
-
-    // --- Group size (optional, but validate shape if provided) ---
+    // --- Group size (min and max both required, min <= max) ---
     const parsedGroupSize = parseJsonField(groupSize, "Group size", null);
-    if (parsedGroupSize) {
-      const { min, max } = parsedGroupSize;
-      if (min !== undefined && (typeof min !== "number" || min < 1)) {
-        errors.push("Group size minimum must be a positive number");
-      }
-      if (max !== undefined && (typeof max !== "number" || max < 1)) {
-        errors.push("Group size maximum must be a positive number");
-      }
-      if (typeof min === "number" && typeof max === "number" && min > max) {
-        errors.push("Group size minimum cannot be greater than maximum");
-      }
-    }
-
-    // --- Trip highlights (required — at least one, matching the frontend) ---
-    const parsedHighlights = parseJsonField(
-      tripHighlights,
-      "Trip highlights",
-      [],
-    );
-    if (!Array.isArray(parsedHighlights) || parsedHighlights.length === 0) {
-      errors.push("At least one trip highlight is required");
+    let cleanGroupSize;
+    if (!parsedGroupSize) {
+      errors.push("Group size (minimum and maximum) is required");
     } else {
-      parsedHighlights.forEach((h, i) => {
-        if (!h?.title?.trim() || !h?.description?.trim()) {
-          errors.push(
-            `Trip highlight #${i + 1} must have a title and description`,
-          );
-        }
-      });
-    }
+      const min = Number(parsedGroupSize.min);
+      const max = Number(parsedGroupSize.max);
+      const minValid =
+        !isBlank(parsedGroupSize.min) && Number.isInteger(min) && min >= 1;
+      const maxValid =
+        !isBlank(parsedGroupSize.max) && Number.isInteger(max) && max >= 1;
 
-    // --- Included / Not Included / Amenities (optional lists) ---
-    const parsedIncluded = parseJsonField(included, "Included list", []);
-    const parsedNotIncluded = parseJsonField(
-      notIncluded,
-      "Not included list",
-      [],
-    );
-    const parsedAmenities = parseJsonField(amenities, "Amenities list", []);
-
-    [
-      ["Included list", parsedIncluded],
-      ["Not included list", parsedNotIncluded],
-      ["Amenities list", parsedAmenities],
-    ].forEach(([label, arr]) => {
-      if (!Array.isArray(arr)) {
-        errors.push(`${label} must be an array`);
-      } else if (arr.some((item) => typeof item !== "string" || !item.trim())) {
-        errors.push(`${label} cannot contain empty entries`);
+      if (!minValid) {
+        errors.push(
+          "Group size minimum is required and must be a whole number of at least 1",
+        );
       }
-    });
-
-    // --- Itinerary (required — at least one day, matching the frontend) ---
-    const parsedItinerary = parseJsonField(itinerary, "Itinerary", []);
-    if (!Array.isArray(parsedItinerary) || parsedItinerary.length === 0) {
-      errors.push("At least one itinerary day is required");
-    } else {
-      parsedItinerary.forEach((d, i) => {
-        if (typeof d?.day !== "number") {
-          errors.push(`Itinerary day #${i + 1} must have a valid day number`);
+      if (!maxValid) {
+        errors.push(
+          "Group size maximum is required and must be a whole number of at least 1",
+        );
+      }
+      if (minValid && maxValid) {
+        if (min > max) {
+          errors.push("Group size minimum cannot be greater than maximum");
+        } else {
+          cleanGroupSize = { min, max };
         }
-        if (!d?.title?.trim()) {
-          errors.push(`Itinerary day #${i + 1} must have a title`);
-        }
-      });
+      }
     }
 
-    // --- Room types (required — Standard Room always exists, price must match top-level price) ---
+    // --- Room types (Standard Room required; extra rooms optional) ---
     const parsedRoomTypes = parseJsonField(roomTypes, "Room types", []);
+    const cleanRoomTypes = [];
     if (!Array.isArray(parsedRoomTypes) || parsedRoomTypes.length === 0) {
-      errors.push("At least one room type is required");
+      errors.push("Standard Room is required");
     } else {
-      const standard = parsedRoomTypes[0];
-      if (!standard || standard.name !== "Standard Room") {
+      const [standard, ...others] = parsedRoomTypes;
+
+      if (
+        typeof standard?.name !== "string" ||
+        standard.name.trim() !== "Standard Room"
+      ) {
         errors.push("The first room type must be Standard Room");
       } else if (
         numericPrice !== undefined &&
-        standard.price !== numericPrice
+        Number(standard.price) !== numericPrice
       ) {
         errors.push("Standard Room price must match the destination price");
+      } else if (numericPrice !== undefined) {
+        const entry = { name: "Standard Room", price: numericPrice };
+        if (!isBlank(standard.description)) {
+          entry.description = String(standard.description).trim();
+        }
+        cleanRoomTypes.push(entry);
       }
 
-      parsedRoomTypes.forEach((r, i) => {
-        if (!r?.name?.trim()) {
-          errors.push(`Room type #${i + 1} must have a name`);
-        }
-        if (typeof r?.price !== "number" || r.price <= 0) {
-          errors.push(`Room type #${i + 1} must have a price greater than 0`);
-        }
-      });
-    }
+      others.forEach((r, i) => {
+        const nothingFilled =
+          isBlank(r?.name) &&
+          isBlank(r?.description) &&
+          (isBlank(r?.price) || Number(r.price) === 0);
+        if (nothingFilled) return; // empty row — skip it
 
-    // --- Add-ons (optional, but validate shape if provided) ---
-    const parsedAddOns = parseJsonField(addOns, "Add-ons", []);
-    if (!Array.isArray(parsedAddOns)) {
-      errors.push("Add-ons must be an array");
-    } else {
-      parsedAddOns.forEach((a, i) => {
-        if (!a?.name?.trim()) {
-          errors.push(`Add-on #${i + 1} must have a name`);
-        }
-        if (typeof a?.price !== "number" || a.price <= 0) {
-          errors.push(`Add-on #${i + 1} must have a price greater than 0`);
+        const rPrice = Number(r?.price);
+        if (isBlank(r?.name)) {
+          errors.push(`Room type #${i + 2} must have a name`);
+        } else if (!Number.isFinite(rPrice) || rPrice <= 0) {
+          errors.push(`Room type #${i + 2} must have a price greater than 0`);
+        } else {
+          const entry = { name: String(r.name).trim(), price: rPrice };
+          if (!isBlank(r.description)) {
+            entry.description = String(r.description).trim();
+          }
+          cleanRoomTypes.push(entry);
         }
       });
     }
@@ -267,7 +251,94 @@ const addDestination = async (req, res) => {
       }
     }
 
-    // --- Gallery images (optional, max 8 — matches schema cap) ---
+    // ===== OPTIONAL FIELDS (only kept if they have a value) =====
+
+    // --- Duration ---
+    let cleanDuration;
+    if (!isBlank(duration)) {
+      if (typeof duration !== "string") {
+        errors.push("Duration must be text");
+      } else {
+        cleanDuration = duration.trim();
+      }
+    }
+
+    // --- Trip highlights (skip empty rows; partial rows are an error) ---
+    const parsedHighlights = parseJsonField(
+      tripHighlights,
+      "Trip highlights",
+      [],
+    );
+    const cleanHighlights = [];
+    if (!Array.isArray(parsedHighlights)) {
+      errors.push("Trip highlights must be an array");
+    } else {
+      parsedHighlights.forEach((h, i) => {
+        if (isBlank(h?.title) && isBlank(h?.description)) return;
+        if (isBlank(h?.title) || isBlank(h?.description)) {
+          errors.push(
+            `Trip highlight #${i + 1} must have both a title and description`,
+          );
+          return;
+        }
+        cleanHighlights.push({
+          title: String(h.title).trim(),
+          description: String(h.description).trim(),
+        });
+      });
+    }
+
+    // --- Simple lists ---
+    const cleanIncluded = cleanStringList(included, "Included list");
+    const cleanNotIncluded = cleanStringList(notIncluded, "Not included list");
+    const cleanAmenities = cleanStringList(amenities, "Amenities list");
+
+    // --- Itinerary (skip empty rows, day numbers assigned by the server) ---
+    const parsedItinerary = parseJsonField(itinerary, "Itinerary", []);
+    const cleanItinerary = [];
+    if (!Array.isArray(parsedItinerary)) {
+      errors.push("Itinerary must be an array");
+    } else {
+      parsedItinerary.forEach((d, i) => {
+        if (isBlank(d?.title) && isBlank(d?.description)) return;
+        if (isBlank(d?.title)) {
+          errors.push(`Itinerary entry #${i + 1} must have a title`);
+          return;
+        }
+        const entry = {
+          day: cleanItinerary.length + 1,
+          title: String(d.title).trim(),
+        };
+        if (!isBlank(d.description)) {
+          entry.description = String(d.description).trim();
+        }
+        cleanItinerary.push(entry);
+      });
+    }
+
+    // --- Add-ons (skip empty rows) ---
+    const parsedAddOns = parseJsonField(addOns, "Add-ons", []);
+    const cleanAddOns = [];
+    if (!Array.isArray(parsedAddOns)) {
+      errors.push("Add-ons must be an array");
+    } else {
+      parsedAddOns.forEach((a, i) => {
+        if (isBlank(a?.name) && isBlank(a?.price)) return;
+
+        const aPrice = Number(a?.price);
+        if (isBlank(a?.name)) {
+          errors.push(`Add-on #${i + 1} must have a name`);
+        } else if (!Number.isFinite(aPrice) || aPrice <= 0) {
+          errors.push(`Add-on #${i + 1} must have a price greater than 0`);
+        } else {
+          const entry = { name: String(a.name).trim(), price: aPrice };
+          if (!isBlank(a.unit)) entry.unit = String(a.unit).trim();
+          cleanAddOns.push(entry);
+        }
+      });
+    }
+
+    // --- Gallery images (optional, max 8) ---
     const galleryFiles = req.files?.images || [];
     if (galleryFiles.length > 8) {
       errors.push("You can upload a maximum of 8 gallery images");
@@ -281,16 +352,16 @@ const addDestination = async (req, res) => {
       }
     }
 
-    // --- Bail out if anything failed, with a guaranteed non-empty message ---
+    // --- Bail out if anything failed ---
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: errors[0], // first error as the headline message for a toast
+        message: errors[0],
         errors,
       });
     }
 
-    // --- Uploads (only reached once every check above has passed) ---
+    // --- Uploads (only reached once every check has passed) ---
     const mainImageUpload = await imagekit.files.upload({
       file: mainImageFile.buffer.toString("base64"),
       fileName: mainImageFile.originalname,
@@ -309,25 +380,30 @@ const addDestination = async (req, res) => {
       ),
     );
 
-    const destination = await Destination.create({
+    // --- Build the document: required fields first, optional only if present ---
+    const doc = {
       title: title.trim(),
       description: description.trim(),
       location: location.trim(),
       price: numericPrice,
-      duration: duration?.trim(),
-      groupSize: parsedGroupSize || undefined,
-      tripHighlights: parsedHighlights,
-      included: parsedIncluded,
-      notIncluded: parsedNotIncluded,
-      amenities: parsedAmenities,
-      itinerary: parsedItinerary,
-      roomTypes: parsedRoomTypes,
-      addOns: parsedAddOns,
+      groupSize: cleanGroupSize,
+      roomTypes: cleanRoomTypes,
       mainImage: mainImageUpload.url,
-      images: galleryUploads.map((img) => img.url),
       createdBy: req.user._id,
       isPublished: true,
-    });
+    };
+
+    if (cleanDuration) doc.duration = cleanDuration;
+    if (cleanHighlights.length) doc.tripHighlights = cleanHighlights;
+    if (cleanIncluded.length) doc.included = cleanIncluded;
+    if (cleanNotIncluded.length) doc.notIncluded = cleanNotIncluded;
+    if (cleanAmenities.length) doc.amenities = cleanAmenities;
+    if (cleanItinerary.length) doc.itinerary = cleanItinerary;
+    if (cleanAddOns.length) doc.addOns = cleanAddOns;
+    if (galleryUploads.length)
+      doc.images = galleryUploads.map((img) => img.url);
+
+    const destination = await Destination.create(doc);
 
     res.status(201).json({
       success: true,
@@ -339,7 +415,7 @@ const addDestination = async (req, res) => {
       const messages = Object.values(error.errors).map((e) => e.message);
       return res.status(400).json({
         success: false,
-        message: messages[0] || "Validation failed", // never empty
+        message: messages[0] || "Validation failed",
         errors: messages,
       });
     }
@@ -347,7 +423,6 @@ const addDestination = async (req, res) => {
     console.log(error);
     res.status(500).json({
       success: false,
-      // never send an empty/undefined message to the frontend toast
       message: "Something went wrong while creating the destination",
     });
   }
