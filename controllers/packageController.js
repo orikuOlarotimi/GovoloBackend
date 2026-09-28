@@ -1,24 +1,30 @@
 const mongoose = require("mongoose");
 const Destination = require("../models/Destination");
 const Package = require("../models/Package");
+const User = require("../models/User")
 
 const addPackage = async (req, res) => {
   try {
     // --- Auth / role check first ---
-    if (!req.user) {
+    if (!req.user.id) {
       return res.status(401).json({
         success: false,
         message: "You must be logged in to perform this action",
       });
     }
-
-    if (req.user.rolePrivilege !== "admin") {
+    const user = await User.findById(req.user.id)
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "user not found"
+      })
+    }
+    if (user.rolePrivilege !== "admin") {
       return res.status(403).json({
         success: false,
         message: "You do not have permission to create a package",
       });
     }
-
     const {
       destination: destinationId,
       price,
@@ -40,6 +46,7 @@ const addPackage = async (req, res) => {
 
     const destination = await Destination.findById(destinationId);
 
+
     if (!destination) {
       return res.status(404).json({
         success: false,
@@ -54,7 +61,7 @@ const addPackage = async (req, res) => {
       });
     }
 
-    if (String(destination.createdBy) !== String(req.user._id)) {
+    if (String(destination.createdBy) !== String(req.user.id)) {
       return res.status(403).json({
         success: false,
         message: "You can only create packages for your own destinations",
@@ -129,15 +136,14 @@ const addPackage = async (req, res) => {
         errors,
       });
     }
-
     const newPackage = await Package.create({
-      destination: destination._id,
+      destination: destination.id,
       price: numericPrice,
       duration: duration.trim(),
       groupSize: parsedGroupSize,
       included: parsedIncluded,
       addOns: parsedAddOns,
-      createdBy: req.user._id,
+      createdBy: req.user.id,
       isPublished: true,
     });
 
@@ -160,8 +166,6 @@ const addPackage = async (req, res) => {
         errors: messages,
       });
     }
-
-    console.log(error);
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating the package",

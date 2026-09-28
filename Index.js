@@ -37,7 +37,7 @@ app.use("/api/destinations", destinationRoutes);
 app.use("/api/booking", bookingRoutes)
 app.use("/api/testimonial", testimonialRoutes)
 
-app.use("/api/package", packageRoutes)
+app.use("/api/packages", packageRoutes)
 app.use("/api/blogs", blogRoutes);
 
 
