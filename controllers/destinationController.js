@@ -4,6 +4,7 @@ const imagekit = require("../config/imagekit")
 const verifyImageBuffer = require("../services/verifyImage")
 const mongoose = require("mongoose");
 const User = require("../models/User")
+const Review  = require("../models/Testimonial")
 
 
 const isBlank = (v) =>
@@ -454,27 +455,34 @@ const getDestination = async (req, res) => {
       });
     }
 
-    const destination = await Destination.findOne({
-      _id: id,
-      isPublished: true,
-    }).populate("createdBy", "name email"); // adjust field list to your User schema
+     const [destination, reviews] = await Promise.all([
+       Destination.findOne({
+         _id: id,
+         isPublished: true,
+       }).populate("createdBy", "firstName lastName email"),
 
-    if (!destination) {
-      return res.status(404).json({
-        success: false,
-        message: "Destination not found",
-      });
-    }
+       Review.find({ destination: id })
+         .select("rating comment user createdAt")
+         .populate("user", "firstName lastName")
+         .sort({ createdAt: -1 }),
+     ]);
 
-    res.status(200).json({
-      success: true,
-      destination,
-    });
+     if (!destination) {
+       return res.status(404).json({
+         success: false,
+         message: "Destination not found",
+       });
+     }
+
+     res.status(200).json({
+       success: true,
+       destination,
+       reviews,
+     });
   } catch (error) {
-    console.log(error)
     res.status(500).json({
       success: false,
-      message: "Something went wrong",
+      message: error,
     });
   }
 };
@@ -529,6 +537,418 @@ const getMyDestinations = async (req, res) => {
     });
   }
 };
+
+const editDestination = async (req, res) => {
+  try {
+    // --- 1. Auth check ---
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "You must be logged in to perform this action",
+      });
+    }
+
+    // --- 2. User exists ---
+    const user = await User.findById(userId).select("rolePrivilege");
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Account not found. Please log in again",
+      });
+    }
+
+    // --- 3. Role check ---
+    if (user.rolePrivilege !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to edit a destination",
+      });
+    }
+
+    // --- 4. Destination id check ---
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid destination id",
+      });
+    }
+
+    const destination = await Destination.findById(id);
+    if (!destination) {
+      return res.status(404).json({
+        success: false,
+        message: "Destination not found",
+      });
+    }
+
+    // --- 5. Ownership check — can only edit your own destinations ---
+    if (String(destination.createdBy) !== String(user.id)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only edit your own destinations",
+      });
+    }
+
+    const {
+      title,
+      description,
+      location,
+      price,
+      duration,
+      groupSize,
+      tripHighlights,
+      included,
+      notIncluded,
+      amenities,
+      itinerary,
+      roomTypes,
+      addOns,
+      removeImages, // JSON string: string[] — URLs of existing gallery images to drop
+    } = req.body;
+
+    const errors = [];
+
+    function parseJsonField(raw, fieldName, fallback) {
+      if (isBlank(raw)) return fallback;
+      if (typeof raw !== "string") return raw;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        errors.push(`${fieldName} must be valid JSON`);
+        return fallback;
+      }
+    }
+
+    function cleanStringList(raw, label) {
+      const arr = parseJsonField(raw, label, undefined);
+      if (arr === undefined) return undefined; // field not sent — leave untouched
+      if (!Array.isArray(arr)) {
+        errors.push(`${label} must be an array`);
+        return undefined;
+      }
+      return arr.filter((i) => !isBlank(i)).map((i) => String(i).trim());
+    }
+
+    const updates = {};
+
+    // --- Title (only validated/applied if sent) ---
+    if (!isBlank(title)) {
+      if (title.trim().length < 3) {
+        errors.push("Title must be at least 3 characters long");
+      } else if (title.trim().length > 120) {
+        errors.push("Title cannot exceed 120 characters");
+      } else {
+        updates.title = title.trim();
+      }
+    }
+
+    // --- Description ---
+    if (!isBlank(description)) {
+      if (description.trim().length < 10) {
+        errors.push("Description must be at least 10 characters long");
+      } else {
+        updates.description = description.trim();
+      }
+    }
+
+    // --- Location ---
+    if (!isBlank(location)) {
+      updates.location = location.trim();
+    }
+
+    // --- Price (Standard Room price) ---
+    let numericPrice;
+    if (!isBlank(price)) {
+      numericPrice = Number(price);
+      if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+        errors.push("Price must be a valid number greater than 0");
+      } else {
+        updates.price = numericPrice;
+      }
+    }
+
+    // --- Duration ---
+    if (!isBlank(duration)) {
+      updates.duration = duration.trim();
+    }
+
+    // --- Group size ---
+    const parsedGroupSize = parseJsonField(groupSize, "Group size", undefined);
+    if (parsedGroupSize !== undefined) {
+      const min = Number(parsedGroupSize?.min);
+      const max = Number(parsedGroupSize?.max);
+      const minValid =
+        !isBlank(parsedGroupSize?.min) && Number.isInteger(min) && min >= 1;
+      const maxValid =
+        !isBlank(parsedGroupSize?.max) && Number.isInteger(max) && max >= 1;
+
+      if (!minValid) {
+        errors.push("Group size minimum must be a whole number of at least 1");
+      }
+      if (!maxValid) {
+        errors.push("Group size maximum must be a whole number of at least 1");
+      }
+      if (minValid && maxValid) {
+        if (min > max) {
+          errors.push("Group size minimum cannot be greater than maximum");
+        } else {
+          updates.groupSize = { min, max };
+        }
+      }
+    }
+
+    // --- Room types ---
+    const parsedRoomTypes = parseJsonField(roomTypes, "Room types", undefined);
+    if (parsedRoomTypes !== undefined) {
+      if (!Array.isArray(parsedRoomTypes) || parsedRoomTypes.length === 0) {
+        errors.push("Standard Room is required");
+      } else {
+        const [standard, ...others] = parsedRoomTypes;
+        const effectivePrice =
+          numericPrice !== undefined ? numericPrice : destination.price;
+
+        const cleanRoomTypes = [];
+
+        if (
+          typeof standard?.name !== "string" ||
+          standard.name.trim() !== "Standard Room"
+        ) {
+          errors.push("The first room type must be Standard Room");
+        } else if (Number(standard.price) !== effectivePrice) {
+          errors.push("Standard Room price must match the destination price");
+        } else {
+          const entry = { name: "Standard Room", price: effectivePrice };
+          if (!isBlank(standard.description)) {
+            entry.description = String(standard.description).trim();
+          }
+          cleanRoomTypes.push(entry);
+        }
+
+        others.forEach((r, i) => {
+          const nothingFilled =
+            isBlank(r?.name) &&
+            isBlank(r?.description) &&
+            (isBlank(r?.price) || Number(r.price) === 0);
+          if (nothingFilled) return;
+
+          const rPrice = Number(r?.price);
+          if (isBlank(r?.name)) {
+            errors.push(`Room type #${i + 2} must have a name`);
+          } else if (!Number.isFinite(rPrice) || rPrice <= 0) {
+            errors.push(`Room type #${i + 2} must have a price greater than 0`);
+          } else {
+            const entry = { name: String(r.name).trim(), price: rPrice };
+            if (!isBlank(r.description)) {
+              entry.description = String(r.description).trim();
+            }
+            cleanRoomTypes.push(entry);
+          }
+        });
+
+        if (cleanRoomTypes.length) updates.roomTypes = cleanRoomTypes;
+      }
+    } else if (numericPrice !== undefined) {
+      // Price changed but roomTypes wasn't resent — keep Standard Room in sync.
+      const existingRoomTypes = destination.roomTypes.map((r, i) =>
+        i === 0 ? { ...r.toObject(), price: numericPrice } : r,
+      );
+      updates.roomTypes = existingRoomTypes;
+    }
+
+    // --- Trip highlights ---
+    const parsedHighlights = parseJsonField(
+      tripHighlights,
+      "Trip highlights",
+      undefined,
+    );
+    if (parsedHighlights !== undefined) {
+      if (!Array.isArray(parsedHighlights)) {
+        errors.push("Trip highlights must be an array");
+      } else {
+        const cleanHighlights = [];
+        parsedHighlights.forEach((h, i) => {
+          if (isBlank(h?.title) && isBlank(h?.description)) return;
+          if (isBlank(h?.title) || isBlank(h?.description)) {
+            errors.push(
+              `Trip highlight #${i + 1} must have both a title and description`,
+            );
+            return;
+          }
+          cleanHighlights.push({
+            title: String(h.title).trim(),
+            description: String(h.description).trim(),
+          });
+        });
+        updates.tripHighlights = cleanHighlights;
+      }
+    }
+
+    // --- Simple lists ---
+    const cleanIncluded = cleanStringList(included, "Included list");
+    if (cleanIncluded !== undefined) updates.included = cleanIncluded;
+
+    const cleanNotIncluded = cleanStringList(notIncluded, "Not included list");
+    if (cleanNotIncluded !== undefined) updates.notIncluded = cleanNotIncluded;
+
+    const cleanAmenities = cleanStringList(amenities, "Amenities list");
+    if (cleanAmenities !== undefined) updates.amenities = cleanAmenities;
+
+    // --- Itinerary ---
+    const parsedItinerary = parseJsonField(itinerary, "Itinerary", undefined);
+    if (parsedItinerary !== undefined) {
+      if (!Array.isArray(parsedItinerary)) {
+        errors.push("Itinerary must be an array");
+      } else {
+        const cleanItinerary = [];
+        parsedItinerary.forEach((d) => {
+          if (isBlank(d?.title) && isBlank(d?.description)) return;
+          if (isBlank(d?.title)) {
+            errors.push(
+              `Itinerary entry #${cleanItinerary.length + 1} must have a title`,
+            );
+            return;
+          }
+          const entry = {
+            day: cleanItinerary.length + 1,
+            title: String(d.title).trim(),
+          };
+          if (!isBlank(d.description)) {
+            entry.description = String(d.description).trim();
+          }
+          cleanItinerary.push(entry);
+        });
+        updates.itinerary = cleanItinerary;
+      }
+    }
+
+    // --- Add-ons ---
+    const parsedAddOns = parseJsonField(addOns, "Add-ons", undefined);
+    if (parsedAddOns !== undefined) {
+      if (!Array.isArray(parsedAddOns)) {
+        errors.push("Add-ons must be an array");
+      } else {
+        const cleanAddOns = [];
+        parsedAddOns.forEach((a, i) => {
+          if (isBlank(a?.name) && isBlank(a?.price)) return;
+          const aPrice = Number(a?.price);
+          if (isBlank(a?.name)) {
+            errors.push(`Add-on #${i + 1} must have a name`);
+          } else if (!Number.isFinite(aPrice) || aPrice <= 0) {
+            errors.push(`Add-on #${i + 1} must have a price greater than 0`);
+          } else {
+            const entry = { name: String(a.name).trim(), price: aPrice };
+            if (!isBlank(a.unit)) entry.unit = String(a.unit).trim();
+            cleanAddOns.push(entry);
+          }
+        });
+        updates.addOns = cleanAddOns;
+      }
+    }
+
+    // --- Main image (optional replace) ---
+    const mainImageFile = req.files?.mainImage?.[0];
+    if (mainImageFile) {
+      const check = await verifyImageBuffer(mainImageFile.buffer);
+      if (!check.valid) {
+        errors.push(`Main image rejected: ${check.reason}`);
+      }
+    }
+
+    // --- Gallery images: remove + add, capped at 8 total ---
+    const parsedRemoveImages = parseJsonField(
+      removeImages,
+      "Remove images",
+      [],
+    );
+    const toRemove = Array.isArray(parsedRemoveImages)
+      ? parsedRemoveImages
+      : [];
+    const remainingImages = destination.images.filter(
+      (url) => !toRemove.includes(url),
+    );
+
+    const newGalleryFiles = req.files?.images || [];
+    if (remainingImages.length + newGalleryFiles.length > 8) {
+      errors.push("You can only have a maximum of 8 gallery images in total");
+    }
+    for (const file of newGalleryFiles) {
+      const check = await verifyImageBuffer(file.buffer);
+      if (!check.valid) {
+        errors.push(
+          `Gallery image "${file.originalname}" rejected: ${check.reason}`,
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: errors[0],
+        errors,
+      });
+    }
+
+    // --- Uploads (only after every check has passed) ---
+    if (mainImageFile) {
+      const mainImageUpload = await imagekit.files.upload({
+        file: mainImageFile.buffer.toString("base64"),
+        fileName: mainImageFile.originalname,
+        folder: "/destinations",
+        useUniqueFileName: true,
+      });
+      updates.mainImage = mainImageUpload.url;
+    }
+
+    let finalImages = remainingImages;
+    if (newGalleryFiles.length) {
+      const galleryUploads = await Promise.all(
+        newGalleryFiles.map((file) =>
+          imagekit.files.upload({
+            file: file.buffer.toString("base64"),
+            fileName: file.originalname,
+            folder: "/destinations",
+            useUniqueFileName: true,
+          }),
+        ),
+      );
+      finalImages = [
+        ...remainingImages,
+        ...galleryUploads.map((img) => img.url),
+      ];
+    }
+    if (toRemove.length || newGalleryFiles.length) {
+      updates.images = finalImages;
+    }
+
+    const updated = await Destination.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Destination updated successfully",
+      destination: updated,
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages[0] || "Validation failed",
+        errors: messages,
+      });
+    }
+
+    console.log(error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while updating the destination",
+    });
+  }
+};
 // delete destinations and update destinations to be created 
 
 module.exports = {
@@ -537,4 +957,5 @@ module.exports = {
   addDestination,
   getDestination,
   getMyDestinations,
+  editDestination,
 };

@@ -19,8 +19,8 @@ const getAllBlogs = async (req, res) => {
       .select("_id");
 
     const blogs = await Blog.find({ isPublished: true })
-      .select("title image tag details author visits createdAt")
-      .populate("author", "name")
+      .select("title image tag details createdBy visits createdAt")
+      .populate("createdBy", "firstName")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -44,9 +44,10 @@ const getAllBlogs = async (req, res) => {
       blogs: blogsWithTrending,
     });
   } catch (error) {
+    console.log(error)
     res.status(500).json({
       success: false,
-      message: "Something went wrong while fetching blogs",
+      message: error,
     });
   }
 };
@@ -120,6 +121,7 @@ const registerBlogClick = async (req, res) => {
     });
   }
 };
+
 
 const createBlog = async (req, res) => {
   try {
