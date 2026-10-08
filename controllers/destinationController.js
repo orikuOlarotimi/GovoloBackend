@@ -455,34 +455,45 @@ const getDestination = async (req, res) => {
       });
     }
 
-     const [destination, reviews] = await Promise.all([
-       Destination.findOne({
-         _id: id,
-         isPublished: true,
-       }).populate("createdBy", "firstName lastName email"),
+    const [destination, reviews] = await Promise.all([
+      Destination.findOne({ _id: id, isPublished: true }).populate(
+        "createdBy",
+        "firstName lastName -_id",
+      ),
 
-       Review.find({ destination: id })
-         .select("rating comment user createdAt")
-         .populate("user", "firstName lastName")
-         .sort({ createdAt: -1 }),
-     ]);
+      Review.find({ destination: id })
+        .select("rating comment user createdAt")
+        .populate("user", "firstName lastName -_id")
+        .sort({ createdAt: -1 })
+        .lean(),
+    ]);
 
-     if (!destination) {
-       return res.status(404).json({
-         success: false,
-         message: "Destination not found",
-       });
-     }
+    if (!destination) {
+      return res.status(404).json({
+        success: false,
+        message: "Destination not found",
+      });
+    }
 
-     res.status(200).json({
-       success: true,
-       destination,
-       reviews,
-     });
+    const ratingCount = reviews.length;
+    const averageRating = ratingCount
+      ? Number(
+          (reviews.reduce((sum, r) => sum + r.rating, 0) / ratingCount).toFixed(
+            1,
+          ),
+        )
+      : 0;
+
+    res.status(200).json({
+      success: true,
+      destination,
+      reviews,
+      ratingSummary: { averageRating, ratingCount },
+    });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error,
+      message: error.message || "Server error",
     });
   }
 };
@@ -949,6 +960,68 @@ const editDestination = async (req, res) => {
     });
   }
 };
+
+const getAdminDestination = async (req, res) => {
+  try {
+    // 1. Must be authenticated
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    // 2. Admin must exist in the DB and still hold the admin role
+    const admin = await User.findById(req.user.id).select("rolePrivilege");
+
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (admin.rolePrivilege !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    // 3. Validate the id
+    const id = req.params.id?.trim();
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid destination id",
+      });
+    }
+
+    // 4. Published or draft, but only this admin's own destination
+    const destination = await Destination.findOne({
+      _id: id,
+      createdBy: admin._id,
+    }).populate("createdBy", "firstName lastName -_id");
+
+    if (!destination) {
+      return res.status(404).json({
+        success: false,
+        message: "Destination not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      destination,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
 // delete destinations and update destinations to be created 
 
 module.exports = {
@@ -958,4 +1031,5 @@ module.exports = {
   getDestination,
   getMyDestinations,
   editDestination,
+  getAdminDestination,
 };
