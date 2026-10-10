@@ -642,70 +642,106 @@ const editDestination = async (req, res) => {
       return arr.filter((i) => !isBlank(i)).map((i) => String(i).trim());
     }
 
-    const updates = {};
+    // Rule used below:
+    //  - field not sent (undefined)  -> leave untouched
+    //  - sent but blank              -> error if required, cleared if optional
+    const wasSent = (v) => v !== undefined;
 
-    // --- Title (only validated/applied if sent) ---
-    if (!isBlank(title)) {
-      if (title.trim().length < 3) {
+    const updates = {}; // fields to set
+    const unsets = {}; // optional fields to remove
+
+    // --- Title (required) ---
+    if (wasSent(title)) {
+      const t = String(title).trim();
+      if (!t) {
+        errors.push("Title is required");
+      } else if (t.length < 3) {
         errors.push("Title must be at least 3 characters long");
-      } else if (title.trim().length > 120) {
+      } else if (t.length > 120) {
         errors.push("Title cannot exceed 120 characters");
       } else {
-        updates.title = title.trim();
+        updates.title = t;
       }
     }
 
-    // --- Description ---
-    if (!isBlank(description)) {
-      if (description.trim().length < 10) {
+    // --- Description (required) ---
+    if (wasSent(description)) {
+      const d = String(description).trim();
+      if (!d) {
+        errors.push("Description is required");
+      } else if (d.length < 10) {
         errors.push("Description must be at least 10 characters long");
       } else {
-        updates.description = description.trim();
+        updates.description = d;
       }
     }
 
-    // --- Location ---
-    if (!isBlank(location)) {
-      updates.location = location.trim();
-    }
-
-    // --- Price (Standard Room price) ---
-    let numericPrice;
-    if (!isBlank(price)) {
-      numericPrice = Number(price);
-      if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
-        errors.push("Price must be a valid number greater than 0");
+    // --- Location (required) ---
+    if (wasSent(location)) {
+      const l = String(location).trim();
+      if (!l) {
+        errors.push("Location is required");
       } else {
-        updates.price = numericPrice;
+        updates.location = l;
       }
     }
 
-    // --- Duration ---
-    if (!isBlank(duration)) {
-      updates.duration = duration.trim();
+    // --- Price (required, Standard Room price) ---
+    let numericPrice;
+    if (wasSent(price)) {
+      if (isBlank(price)) {
+        errors.push("Price is required");
+      } else {
+        numericPrice = Number(price);
+        if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+          errors.push("Price must be a valid number greater than 0");
+          numericPrice = undefined;
+        } else {
+          updates.price = numericPrice;
+        }
+      }
     }
 
-    // --- Group size ---
+    // --- Duration (optional: blank clears it) ---
+    if (wasSent(duration)) {
+      const dur = String(duration).trim();
+      if (dur) {
+        updates.duration = dur;
+      } else {
+        unsets.duration = "";
+      }
+    }
+
+    // --- Group size (optional: both blank clears it) ---
     const parsedGroupSize = parseJsonField(groupSize, "Group size", undefined);
     if (parsedGroupSize !== undefined) {
-      const min = Number(parsedGroupSize?.min);
-      const max = Number(parsedGroupSize?.max);
-      const minValid =
-        !isBlank(parsedGroupSize?.min) && Number.isInteger(min) && min >= 1;
-      const maxValid =
-        !isBlank(parsedGroupSize?.max) && Number.isInteger(max) && max >= 1;
+      const minBlank = isBlank(parsedGroupSize?.min);
+      const maxBlank = isBlank(parsedGroupSize?.max);
 
-      if (!minValid) {
-        errors.push("Group size minimum must be a whole number of at least 1");
-      }
-      if (!maxValid) {
-        errors.push("Group size maximum must be a whole number of at least 1");
-      }
-      if (minValid && maxValid) {
-        if (min > max) {
-          errors.push("Group size minimum cannot be greater than maximum");
-        } else {
-          updates.groupSize = { min, max };
+      if (minBlank && maxBlank) {
+        unsets.groupSize = "";
+      } else {
+        const min = Number(parsedGroupSize?.min);
+        const max = Number(parsedGroupSize?.max);
+        const minValid = !minBlank && Number.isInteger(min) && min >= 1;
+        const maxValid = !maxBlank && Number.isInteger(max) && max >= 1;
+
+        if (!minValid) {
+          errors.push(
+            "Group size minimum must be a whole number of at least 1",
+          );
+        }
+        if (!maxValid) {
+          errors.push(
+            "Group size maximum must be a whole number of at least 1",
+          );
+        }
+        if (minValid && maxValid) {
+          if (min > max) {
+            errors.push("Group size minimum cannot be greater than maximum");
+          } else {
+            updates.groupSize = { min, max };
+          }
         }
       }
     }
@@ -933,7 +969,20 @@ const editDestination = async (req, res) => {
       updates.images = finalImages;
     }
 
-    const updated = await Destination.findByIdAndUpdate(id, updates, {
+    // --- Build the update: $set for values, $unset for cleared optional fields ---
+    const updateOps = {};
+    if (Object.keys(updates).length) updateOps.$set = updates;
+    if (Object.keys(unsets).length) updateOps.$unset = unsets;
+
+    if (Object.keys(updateOps).length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No changes to save",
+        destination,
+      });
+    }
+
+    const updated = await Destination.findByIdAndUpdate(id, updateOps, {
       new: true,
       runValidators: true,
     });
