@@ -40,7 +40,7 @@ router.post(
   addDestination,
 );
 router.patch(
-  "/:id",
+  "/mine/:id",
   protect,
   upload.fields([
     { name: "mainImage", maxCount: 1 },
