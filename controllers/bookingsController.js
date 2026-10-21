@@ -1,4 +1,19 @@
 const Booking = require("../models/Bookings");
+const mongoose = require("mongoose");
+const Destination = require("../models/Destination");
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^\+?[0-9\s-]{7,20}$/;
+
+const clean = (value) => (typeof value === "string" ? value.trim() : "");
+
+const parseDate = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isWholeNumber = (value) => Number.isInteger(value);
 
 const getAllBookings = async (req, res) => {
   try {
@@ -34,164 +49,303 @@ const getAllBookings = async (req, res) => {
 };
 
 const createBooking = async (req, res) => {
-  try {
-    const { title, location, price, days, accommodation, checkpoints, tag } =
-      req.body;
+   try {
+     // ASSUMPTION: your auth middleware sets req.user from the JWT
+     const userId = req.user?.id;
+     if (!userId || !mongoose.isValidObjectId(userId)) {
+       return res.status(401).json({ success: false, message: "Unauthorized" });
+     }
 
-    const errors = [];
+     const { destinationId, roomTypeId, guestDetails = {} } = req.body;
 
-    // --- Title ---
-    if (typeof title !== "string" || title.trim().length === 0) {
-      errors.push("Title is required and cannot be empty or whitespace");
-    } else if (title.trim().length < 3) {
-      errors.push("Title must be at least 3 characters long");
-    } else if (title.trim().length > 120) {
-      errors.push("Title cannot exceed 120 characters");
-    }
+     if (typeof destinationId !== "string" || !destinationId.trim()) {
+       return res.status(400).json({
+         success: false,
+         message: "Destination ID is required",
+       });
+     }
 
-    // --- Location ---
-    if (typeof location !== "string" || location.trim().length === 0) {
-      errors.push("Location is required and cannot be empty or whitespace");
-    }
+     // Validate roomTypeId
+     if (typeof roomTypeId !== "string" || !roomTypeId.trim()) {
+       return res.status(400).json({
+         success: false,
+         message: "Room type ID is required",
+       });
+     }
 
-    // --- Price ---
-    if (price === undefined || price === null || price === "") {
-      errors.push("Price is required");
-    } else {
-      const numericPrice = Number(price);
-      if (Number.isNaN(numericPrice) || !Number.isFinite(numericPrice)) {
-        errors.push("Price must be a valid number");
-      } else if (numericPrice <= 0) {
-        errors.push("Price must be greater than 0");
-      }
-    }
+     // Validate guestDetails
+     if (
+       !guestDetails ||
+       typeof guestDetails !== "object" ||
+       Array.isArray(guestDetails) ||
+       Object.keys(guestDetails).length === 0
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Guest details are required",
+       });
+     }
+     const { fullName, email, phone, specialRequests } = guestDetails;
 
-    // --- Days ---
-    if (days === undefined || days === null || days === "") {
-      errors.push("Days is required");
-    } else {
-      const numericDays = Number(days);
-      if (!Number.isInteger(numericDays)) {
-        errors.push("Days must be a whole number");
-      } else if (numericDays < 1) {
-        errors.push("Days must be at least 1");
-      }
-    }
+     if (
+       fullName == null ||
+       String(fullName).trim() === "" ||
+       email == null ||
+       String(email).trim() === "" ||
+       phone == null ||
+       String(phone).trim() === ""
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Full name, email, and phone are required",
+       });
+     }
 
-    // --- Accommodation (min/max) ---
-    let accMin, accMax;
-    if (
-      !accommodation ||
-      typeof accommodation !== "object" ||
-      Array.isArray(accommodation)
-    ) {
-      errors.push("Accommodation must be an object with min and max values");
-    } else {
-      accMin = Number(accommodation.min);
-      accMax = Number(accommodation.max);
+     const guestFullName = String(fullName).trim();
+     const guestEmail = String(email).trim().toLowerCase();
+     const guestPhone = String(phone).trim();
+     const guestSpecialRequests =
+       specialRequests == null ? "" : String(specialRequests).trim();
 
-      if (
-        accommodation.min === undefined ||
-        accommodation.min === null ||
-        Number.isNaN(accMin)
-      ) {
-        errors.push("Accommodation minimum is required and must be a number");
-      } else if (!Number.isInteger(accMin) || accMin < 1) {
-        errors.push(
-          "Accommodation minimum must be a whole number of at least 1",
-        );
-      }
+    
 
-      if (
-        accommodation.max === undefined ||
-        accommodation.max === null ||
-        Number.isNaN(accMax)
-      ) {
-        errors.push("Accommodation maximum is required and must be a number");
-      } else if (!Number.isInteger(accMax) || accMax < 1) {
-        errors.push(
-          "Accommodation maximum must be a whole number of at least 1",
-        );
-      }
+     // Validate destination ID
+     if (
+       typeof destinationId !== "string" ||
+       !mongoose.isValidObjectId(destinationId)
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid destination",
+       });
+     }
 
-      // Only compare min/max if both individually passed their own checks
-      if (
-        Number.isInteger(accMin) &&
-        Number.isInteger(accMax) &&
-        accMin > accMax
-      ) {
-        errors.push("Accommodation minimum cannot be greater than maximum");
-      }
-    }
+     // Validate room type ID
+     if (
+       typeof roomTypeId !== "string" ||
+       !mongoose.isValidObjectId(roomTypeId)
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid room type",
+       });
+     }
 
-    // --- Checkpoints (optional array of strings) ---
-    if (checkpoints !== undefined) {
-      if (!Array.isArray(checkpoints)) {
-        errors.push("Checkpoints must be an array of strings");
-      } else if (checkpoints.length > 20) {
-        errors.push("You can list a maximum of 20 checkpoints");
-      } else if (
-        checkpoints.some(
-          (cp) => typeof cp !== "string" || cp.trim().length === 0,
-        )
-      ) {
-        errors.push("Each checkpoint must be a non-empty string");
-      }
-    }
+     if (guestFullName.length < 2 || guestFullName.length > 100) {
+       return res.status(400).json({
+         success: false,
+         message: "Full name must be between 2 and 100 characters",
+       });
+     }
 
-    // --- Tag (optional single string) ---
-    if (tag !== undefined && tag !== null && tag !== "") {
-      if (typeof tag !== "string") {
-        errors.push("Tag must be a string");
-      } else if (tag.trim().length > 30) {
-        errors.push("Tag cannot exceed 30 characters");
-      }
-    }
+     if (!EMAIL_REGEX.test(guestEmail)) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid email address",
+       });
+     }
 
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors,
-      });
-    }
+     if (!PHONE_REGEX.test(guestPhone)) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid phone number",
+       });
+     }
 
-    // --- Create ---
-    const booking = await Booking.create({
-      title: title.trim(),
-      location: location.trim(),
-      price: Number(price),
-      days: Number(days),
-      accommodation: {
-        min: accMin,
-        max: accMax,
-      },
-      checkpoints: checkpoints ? checkpoints.map((cp) => cp.trim()) : [],
-      tag: tag && tag.trim().length > 0 ? tag.trim() : null,
-      createdBy: req.user?._id,
-      isAvailable: true,
-    });
+     if (guestSpecialRequests.length > 500) {
+       return res.status(400).json({
+         success: false,
+         message: "Special requests must not exceed 500 characters",
+       });
+     }
 
-    res.status(201).json({
-      success: true,
-      booking,
-      message: "booking created sucessfully",
-    });
-  } catch (error) {
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((e) => e.message);
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: messages,
-      });
-    }
+     if (
+       req.body.adults === undefined ||
+       req.body.adults === null ||
+       req.body.adults === ""
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Adults field is required",
+       });
+     }
 
-    res.status(500).json({
-      success: false,
-      message: "Something went wrong while creating the booking",
-    });
-  }
-};
+     if (
+       req.body.children === undefined ||
+       req.body.children === null ||
+       req.body.children === ""
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Children field is required",
+       });
+     }
+
+     if (
+       typeof req.body.adults !== "number" ||
+       typeof req.body.children !== "number"
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Adults and children must be numbers",
+       });
+     }
+
+     // Check that both values are whole numbers
+     if (
+       !Number.isInteger(req.body.adults) ||
+       !Number.isInteger(req.body.children)
+     ) {
+       return res.status(400).json({
+         success: false,
+         message: "Adults and children must be whole numbers",
+       });
+     }
+
+     // Check that both values are positive
+     if (req.body.adults <= 0 || req.body.children < 0) {
+       return res.status(400).json({
+         success: false,
+         message:
+           "Adults must be greater than 0 and children cannot be negative",
+       });
+     }
+     const adults = req.body.adults;
+     const children = req.body.children;
+     const totalGuests = adults + children;
+
+     // Check the total number of guests
+     if (totalGuests < 1) {
+       return res.status(400).json({
+         success: false,
+         message: "Total guests must be greater than or equal to 1",
+       });
+     }
+
+     // Check-in date is required
+     if (req.body.checkIn == null || req.body.checkIn === "") {
+       return res.status(400).json({
+         success: false,
+         message: "Check-in date is required",
+       });
+     }
+
+     // Check-out date is required
+     if (req.body.checkOut == null || req.body.checkOut === "") {
+       return res.status(400).json({
+         success: false,
+         message: "Check-out date is required",
+       });
+     }
+
+     // Parse dates
+     const checkIn = parseDate(req.body.checkIn);
+     const checkOut = parseDate(req.body.checkOut);
+
+     // Validate date formats and values
+     if (!checkIn) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid check-in date",
+       });
+     }
+
+     if (!checkOut) {
+       return res.status(400).json({
+         success: false,
+         message: "Invalid check-out date",
+       });
+     }
+
+     // Check-in cannot be in the past
+     const today = new Date();
+     today.setUTCHours(0, 0, 0, 0);
+
+     if (checkIn < today) {
+       return res.status(400).json({
+         success: false,
+         message: "Check-in date cannot be in the past",
+       });
+     }
+
+     // Check-out must be after check-in
+     if (checkOut <= checkIn) {
+       return res.status(400).json({
+         success: false,
+         message: "Check-out must be after check-in",
+       });
+     }
+
+
+     // ---- Load the destination and room type ----
+     const destination = await Destination.findById(destinationId).lean();
+     if (!destination || destination.isAvailable === false) {
+       return res.status(404).json({
+         success: false,
+         message: "Destination not found or unavailable",
+       });
+     }
+
+     // ASSUMPTION: room types live on destination.roomTypes, each with _id, name, price
+     const roomType = destination.roomTypes?.find(
+       (room) => String(room._id) === String(roomTypeId),
+     );
+     if (!roomType) {
+       return res
+         .status(400)
+         .json({ success: false, message: "Room type not found" });
+     }
+
+     // ASSUMPTION: max group size is destination.accommodation.max
+     const maxGuests = destination.groupSize?.max;
+     if (maxGuests != null && totalGuests > maxGuests) {
+       return res.status(400).json({
+         success: false,
+         message: `This destination allows a maximum of ${maxGuests} guests`,
+       });
+     }
+
+     // ---- Server-side calculations (nothing here comes from the client) ----
+     const days = Math.ceil((checkOut - checkIn) / MS_PER_DAY);
+     const totalPrice = roomType.price * days;
+
+     // ---- Create the pending booking ----
+     const booking = await Booking.create({
+       user: userId,
+       destination: destination._id,
+       destinationSnapshot: {
+         title: destination.title,
+         location: destination.location,
+         image: destination.mainImage, // ASSUMPTION: a single image URL string
+         createdBy: destination.createdBy,
+       },
+       checkIn,
+       checkOut,
+       days,
+       guests: { adults, children, total: totalGuests },
+       roomType: { name: roomType.name, price: roomType.price },
+       guestDetails: {
+         fullName: guestFullName,
+         email: guestEmail,
+         phone: guestPhone,
+         specialRequests: guestSpecialRequests,
+       },
+       originalPrice: roomType.price,
+       totalPrice,
+       // status and paymentStatus use the schema defaults: "pending" / "unpaid"
+     });
+
+     return res.status(201).json({ success: true, booking });
+   } catch (error) {
+     if (error.name === "ValidationError") {
+       return res.status(400).json({ success: false, message: error.message });
+     }
+     console.error("createBooking error:", error);
+     return res
+       .status(500)
+       .json({ success: false, message: "Failed to create booking" });
+   }
+ };
+
 
 module.exports = { getAllBookings, createBooking };

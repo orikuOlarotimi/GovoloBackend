@@ -42,14 +42,6 @@ const bookingSchema = new mongoose.Schema(
       price: { type: Number, required: true, min: 0 },
     },
 
-    // Snapshot of the add-ons chosen (empty if none)
-    addOns: [
-      {
-        name: { type: String, required: true, trim: true },
-        price: { type: Number, required: true, min: 0 },
-      },
-    ],
-
     // Contact details entered on the booking page
     guestDetails: {
       fullName: { type: String, required: true, trim: true },
@@ -76,8 +68,5 @@ const bookingSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-
-bookingSchema.index({ user: 1, createdAt: -1 });
-bookingSchema.index({ destination: 1, status: 1 });
 
 module.exports = mongoose.model("Booking", bookingSchema);
