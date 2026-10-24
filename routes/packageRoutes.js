@@ -1,13 +1,18 @@
 const router = require("express").Router()
-const { addPackage, getMyPackages,
+const {
+  addPackage,
+  getMyPackages,
   getMyPackage,
   editPackage,
-  deleteMyPackage, } = require("../controllers/packageController");
+  deleteMyPackage,
+  getAllPackages,
+} = require("../controllers/packageController");
 const protect = require("../midleware/authMiddleware");
 
 
 
 router.post("/", protect, addPackage)
+router.get("/", getAllPackages);
 router.get("/mine", protect, getMyPackages);
 router.get("/mine/:id", protect, getMyPackage);
 router.patch("/mine/:id", protect, editPackage);

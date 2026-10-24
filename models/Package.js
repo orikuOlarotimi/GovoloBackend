@@ -23,7 +23,10 @@ const packageSchema = new mongoose.Schema(
       min: { type: Number, required: true },
       max: { type: Number, required: true },
     },
-
+    rating: {
+      average: { type: Number, default: 0, min: 0, max: 5 },
+      count: { type: Number, default: 0, min: 0 },
+    },
     included: [{ type: String, trim: true }],
 
     addOns: [
@@ -47,5 +50,12 @@ const packageSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+packageSchema.index({
+  isPublished: 1,
+  "rating.average": -1,
+  "rating.count": -1,
+  createdAt: -1,
+});
 
 module.exports = mongoose.model("Package", packageSchema);

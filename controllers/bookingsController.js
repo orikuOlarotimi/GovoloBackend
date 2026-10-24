@@ -6,14 +6,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[0-9\s-]{7,20}$/;
 
-const clean = (value) => (typeof value === "string" ? value.trim() : "");
 
 const parseDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
-
-const isWholeNumber = (value) => Number.isInteger(value);
 
 const getAllBookings = async (req, res) => {
   try {
@@ -346,6 +343,5 @@ const createBooking = async (req, res) => {
        .json({ success: false, message: "Failed to create booking" });
    }
  };
-
 
 module.exports = { getAllBookings, createBooking };

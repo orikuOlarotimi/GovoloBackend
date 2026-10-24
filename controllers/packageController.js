@@ -205,6 +205,43 @@ const addPackage = async (req, res) => {
   }
 };
 
+
+const getAllPackages = async (req, res) => {
+  try {
+    // 1. Pagination params
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // 2. Query — only available bookings, highest rated first
+    const packages = await Package.find({ isPublished: true })
+      .select(
+        "destination price duration groupSize rating createdAt addOns included",
+      )
+      .populate("destination", "title location mainImage")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // 3. Total count (for frontend pagination)
+    const total = await Package.countDocuments({ isPublished: true });
+
+    res.status(200).json({
+      success: true,
+      page,
+      totalPages: Math.ceil(total / limit),
+      total,
+      count: packages.length,
+      packages,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching bookings",
+    });
+  }
+};
+
 // ---------- GET /api/packages/mine ----------
 const getMyPackages = async (req, res) => {
   try {
@@ -499,6 +536,7 @@ const deleteMyPackage = async (req, res) => {
 
 module.exports = {
   addPackage,
+  getAllPackages,
   getMyPackages,
   getMyPackage,
   editPackage,
