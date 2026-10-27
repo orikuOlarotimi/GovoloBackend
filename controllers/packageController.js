@@ -205,6 +205,39 @@ const addPackage = async (req, res) => {
   }
 };
 
+const getPackage = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid package id",
+      });
+    }
+
+    const pkg = await Package.findOne({ _id: id, isPublished: true })
+      .select("-createdBy -__v")
+      .populate("destination", "title location mainImage rating isPublished")
+      .lean();
+
+    // Missing, unpublished, or its destination was deleted or unpublished
+    if (!pkg || !pkg.destination || pkg.destination.isPublished === false) {
+      return res.status(404).json({
+        success: false,
+        message: "Package not found",
+      });
+    }
+
+    return res.status(200).json({ success: true, package: pkg });
+  } catch (error) {
+    console.error("getPackage error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching the package",
+    });
+  }
+};
 
 const getAllPackages = async (req, res) => {
   try {
@@ -536,6 +569,7 @@ const deleteMyPackage = async (req, res) => {
 
 module.exports = {
   addPackage,
+  getPackage,
   getAllPackages,
   getMyPackages,
   getMyPackage,

@@ -10,6 +10,8 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
 
+    package: { type: mongoose.Schema.Types.ObjectId, ref: "Package" },
+
     // Reference only. The destination may be edited or deleted later,
     // so everything we need is snapshotted below.
     destination: {
@@ -18,6 +20,13 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
 
+    addOns: [
+      {
+        name: { type: String, required: true, trim: true },
+        price: { type: Number, required: true, min: 0 }, // per night
+      },
+    ],
+
     destinationSnapshot: {
       title: { type: String, required: true, trim: true },
       location: { type: String, required: true, trim: true },
@@ -25,6 +34,11 @@ const bookingSchema = new mongoose.Schema(
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     },
 
+    bookingType: {
+      type: String,
+      enum: ["destination", "package"],
+      default: "destination",
+    },
     // Trip details
     checkIn: { type: Date, required: true },
     checkOut: { type: Date, required: true },
