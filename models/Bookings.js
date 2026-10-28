@@ -52,8 +52,8 @@ const bookingSchema = new mongoose.Schema(
 
     // Snapshot of the room type chosen, so later admin edits don't change it
     roomType: {
-      name: { type: String, required: true, trim: true },
-      price: { type: Number, required: true, min: 0 },
+      name: { type: String, trim: true },
+      price: { type: Number, min: 0 },
     },
 
     // Contact details entered on the booking page

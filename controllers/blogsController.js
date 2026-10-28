@@ -10,8 +10,8 @@ const isBlank = (v) =>
 
 const getAllBlogs = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 50);
     const skip = (page - 1) * limit;
 
     const trendingBlog = await Blog.findOne({ isPublished: true })
@@ -19,7 +19,9 @@ const getAllBlogs = async (req, res) => {
       .select("_id");
 
     const blogs = await Blog.find({ isPublished: true })
-      .select("title image tag details createdBy visits createdAt")
+      .select(
+        "title mainImage tags shortDescription readTimeMinutes createdBy visits createdAt",
+      )
       .populate("createdBy", "firstName")
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -44,10 +46,10 @@ const getAllBlogs = async (req, res) => {
       blogs: blogsWithTrending,
     });
   } catch (error) {
-    console.log(error)
+    console.error("getAllBlogs error:", error);
     res.status(500).json({
       success: false,
-      message: error,
+      message: "Failed to fetch blogs",
     });
   }
 };
@@ -121,7 +123,6 @@ const registerBlogClick = async (req, res) => {
     });
   }
 };
-
 
 const createBlog = async (req, res) => {
   try {

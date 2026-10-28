@@ -343,7 +343,6 @@ const createBooking = async (req, res) => {
    }
 };
  
-
 const createDestinationBooking = async (req, res) => {
   try {
     // ASSUMPTION: your auth middleware sets req.user from the JWT
@@ -735,7 +734,6 @@ const createPackageBooking = async (req, res) => {
 
 module.exports = {
   getAllBookings,
-  createBooking,
   createDestinationBooking,
   createPackageBooking,
 };
