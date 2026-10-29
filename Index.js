@@ -13,15 +13,13 @@ app.use(cookieParser());
 app.use(assignVisitorId);
 
 
-
-
-
 const userRoutes = require("./routes/userRoutes")
 const destinationRoutes = require("./routes/destinationRoutes")
 const bookingRoutes = require("./routes/bookingRoutes")
 const testimonialRoutes = require("./routes/testimonialRoutes")
 const blogRoutes = require("./routes/blogRoutes");
 const packageRoutes = require("./routes/packageRoutes")
+const contacRoutes = require('./routes/contactRoutes');
 
 
 app.use(
@@ -40,6 +38,7 @@ app.use("/api/testimonial", testimonialRoutes)
 app.use("/api/packages", packageRoutes)
 app.use("/api/blogs", blogRoutes);
 
+app.use("/api/contact", contacRoutes);
 
 app.get("/", (req, res) => {
   res.send("Travel API is running...");
