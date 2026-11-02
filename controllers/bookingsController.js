@@ -2,6 +2,7 @@ const Booking = require("../models/Bookings");
 const mongoose = require("mongoose");
 const Destination = require("../models/Destination");
 const Package = require("../models/Package")
+const User = require("../models/User");
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,6 +13,8 @@ const parseDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
+
+const VALID_STATUSES = ["pending", "confirmed", "cancelled", "expired"];
 
 const getAllBookings = async (req, res) => {
   try {
@@ -732,8 +735,79 @@ const createPackageBooking = async (req, res) => {
   }
 };
 
+
+const getMyBookings = async (req, res) => {
+  try {
+    const fail = (status, message) =>
+      res.status(status).json({ success: false, message });
+
+    // ASSUMPTION: your auth middleware sets req.user from the JWT
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return fail(401, "Unauthorized");
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.status !== "verified") {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your account first",
+      });
+    }
+
+    // ---- Query params ----
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    if (page < 1) return fail(400, "Page must be 1 or more");
+    if (limit < 1 || limit > 50) {
+      return fail(400, "Limit must be between 1 and 50");
+    }
+
+    const { status } = req.query;
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
+      return fail(400, `Status must be one of: ${VALID_STATUSES.join(", ")}`);
+    }
+
+    // ---- Only this user's bookings ----
+    const filter = { user: userId };
+    if (status) filter.status = status;
+
+    const skip = (page - 1) * limit;
+
+    const [bookings, total] = await Promise.all([
+      Booking.find(filter)
+        .select("-__v")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Booking.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      page,
+      totalPages: Math.ceil(total / limit),
+      total,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error });
+  }
+};
+
 module.exports = {
   getAllBookings,
   createDestinationBooking,
   createPackageBooking,
+  getMyBookings,
 };
