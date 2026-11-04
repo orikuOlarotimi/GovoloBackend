@@ -16,7 +16,7 @@ const bookingSchema = new mongoose.Schema(
     // so everything we need is snapshotted below.
     destination: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Destination",
+      ref: "destination",
       required: true,
     },
 
@@ -82,5 +82,7 @@ const bookingSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+bookingSchema.index({ user: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Booking", bookingSchema);

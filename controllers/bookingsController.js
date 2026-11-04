@@ -735,7 +735,6 @@ const createPackageBooking = async (req, res) => {
   }
 };
 
-
 const getMyBookings = async (req, res) => {
   try {
     const fail = (status, message) =>
@@ -805,9 +804,121 @@ const getMyBookings = async (req, res) => {
   }
 };
 
+const getBookingById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    // Filtering by user means someone else's booking looks like "not found"
+    const booking = await Booking.findOne({ _id: id, user: userId })
+      .select("-__v")
+      .populate("destination", "mainImage images title location") // see assumptions
+      .lean();
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+
+    return res.status(200).json({ success: true, booking });
+  } catch (error) {
+   
+    return res.status(500).json({ success: false, message: error });
+  }
+};
+
+const deleteBooking = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    const booking = await Booking.findOne({ _id: id, user: userId }).select(
+      "status paymentStatus",
+    );
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.status === "confirmed" || booking.paymentStatus === "paid") {
+      return res.status(409).json({
+        success: false,
+        message: "Confirmed or paid bookings can't be deleted",
+      });
+    }
+
+    // The same rule sits in the filter so a payment landing between the
+    // read above and this delete can't be wiped out
+    const result = await Booking.deleteOne({
+      _id: id,
+      user: userId,
+      status: { $ne: "confirmed" },
+      paymentStatus: { $ne: "paid" },
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "This booking can no longer be deleted",
+      });
+    }
+
+    return res.status(200).json({ success: true, message: "Booking deleted" });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error });
+  }
+};
+
+
 module.exports = {
   getAllBookings,
   createDestinationBooking,
   createPackageBooking,
   getMyBookings,
+  getBookingById,
+  deleteBooking,
 };
