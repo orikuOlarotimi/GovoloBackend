@@ -7,6 +7,7 @@ const User = require("../models/User");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[0-9\s-]{7,20}$/;
+const EXPIRY_DAYS = 180;
 
 
 const parseDate = (value) => {
@@ -346,6 +347,7 @@ const createBooking = async (req, res) => {
    }
 };
  
+// for admins
 const createDestinationBooking = async (req, res) => {
   try {
     // ASSUMPTION: your auth middleware sets req.user from the JWT
@@ -735,6 +737,7 @@ const createPackageBooking = async (req, res) => {
   }
 };
 
+// for users
 const getMyBookings = async (req, res) => {
   try {
     const fail = (status, message) =>
@@ -913,6 +916,192 @@ const deleteBooking = async (req, res) => {
   }
 };
 
+const getAdminBookings = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).select("status rolePrivilege");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Role comes from the database, never from the token
+    if (user.rolePrivilege !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Admin access only" });
+    }
+
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    // ---- Query params ----
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    if (page < 1) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Page must be 1 or more" });
+    }
+    if (limit < 1 || limit > 50) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Limit must be between 1 and 50" });
+    }
+
+    const { status } = req.query;
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Status must be one of: ${VALID_STATUSES.join(", ")}`,
+      });
+    }
+
+    // Only bookings made on this admin's own destinations and packages
+    const filter = { "destinationSnapshot.createdBy": userId };
+    if (status) filter.status = status;
+
+    const skip = (page - 1) * limit;
+
+    const [bookings, total] = await Promise.all([
+      Booking.find(filter)
+        .select("-__v -user")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Booking.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      page,
+      totalPages: Math.ceil(total / limit),
+      total,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (error) {
+    console.error("getAdminBookings failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
+  }
+};
+
+const respondToBooking = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).select("status rolePrivilege");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.rolePrivilege !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Admin access only" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    const { decision } = req.body;
+    if (decision !== "accept" && decision !== "reject") {
+      return res.status(400).json({
+        success: false,
+        message: "Decision must be accept or reject",
+      });
+    }
+
+    // Only this admin's own bookings; anything else looks like "not found"
+    const booking = await Booking.findOne({
+      _id: id,
+      "destinationSnapshot.createdBy": userId,
+    }).select("status createdAt");
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.status !== "pending") {
+      return res.status(409).json({
+        success: false,
+        message: `This booking is already ${booking.status}`,
+      });
+    }
+
+    // Until the expiry job exists, don't let an old pending booking be accepted
+    if (decision === "accept") {
+      const cutoff = new Date(Date.now() - EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      if (booking.createdAt < cutoff) {
+        return res.status(409).json({
+          success: false,
+          message: `This booking is older than ${EXPIRY_DAYS} days and has expired`,
+        });
+      }
+    }
+
+    const newStatus = decision === "accept" ? "confirmed" : "cancelled";
+
+    // The status check sits in the filter too, so two clicks (or two admin
+    // tabs) can't both succeed
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: id,
+        "destinationSnapshot.createdBy": userId,
+        status: "pending",
+      },
+      { $set: { status: newStatus } },
+      { new: true },
+    )
+      .select("-__v -user")
+      .lean();
+
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "This booking was already updated",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: decision === "accept" ? "Booking accepted" : "Booking rejected",
+      booking: updated,
+    });
+  } catch (error) {
+    console.error("respondToBooking failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
+  }
+};
+
 
 module.exports = {
   getAllBookings,
@@ -921,4 +1110,6 @@ module.exports = {
   getMyBookings,
   getBookingById,
   deleteBooking,
+  getAdminBookings,
+  respondToBooking,
 };
