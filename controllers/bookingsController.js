@@ -916,6 +916,8 @@ const deleteBooking = async (req, res) => {
   }
 };
 
+// fir admins
+
 const getAdminBookings = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1102,6 +1104,61 @@ const respondToBooking = async (req, res) => {
   }
 };
 
+const getAdminBookingById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).select("status rolePrivilege");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.rolePrivilege !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Admin access only" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    // Only this admin's own bookings; anything else looks like "not found"
+    const booking = await Booking.findOne({
+      _id: id,
+      "destinationSnapshot.createdBy": userId,
+    })
+      .select("-__v -user")
+      .populate("destination", "mainImage images")
+      .lean();
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+
+    return res.status(200).json({ success: true, booking });
+  } catch (error) {
+    console.error("getAdminBookingById failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
+  }
+};
+
 
 module.exports = {
   getAllBookings,
@@ -1112,4 +1169,5 @@ module.exports = {
   deleteBooking,
   getAdminBookings,
   respondToBooking,
+  getAdminBookingById,
 };

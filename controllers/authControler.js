@@ -19,6 +19,36 @@ const Otp = require("../models/Otp");
 const ResetToken = require("../models/ResetToken");
 const AdminRequest = require("../models/AdminRequest");
 
+const imagekit = require("../config/imagekit");
+const verifyImageBuffer = require("../services/verifyImage");
+
+const SAFE_USER_FIELDS =
+  "-password -refreshToken -refreshTokenExpiresAt -avatarFileId -__v";
+
+const AVATAR_EXTENSIONS = ["jpg", "png", "webp"];
+
+
+const ALLOWED_FIELDS = [
+  "firstName",
+  "lastName",
+  "dob",
+  "city",
+  "country",
+  "gender",
+];
+const GENDERS = ["male", "female", "other", "prefer_not_to_say"];
+const TEXT_FIELDS = {
+  firstName: { label: "First name", max: 50 },
+  lastName: { label: "Last name", max: 50 },
+  city: { label: "City", max: 100 },
+  country: { label: "Country", max: 100 },
+};
+// letters in any language, spaces, apostrophes, periods and hyphens
+const TEXT_REGEX = /^[\p{L}][\p{L}\s'’.-]*$/u;
+const DOB_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
+
 
 
 const calculateAge = require("../utils/calculateAge");
@@ -1000,6 +1030,261 @@ const requestAdminAccess = async (req, res) => {
       success: false,
       message: "Something went wrong",
     });
+  }
+};
+
+
+const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).select("status");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const body = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid request body" });
+    }
+
+    const keys = Object.keys(body);
+    if (keys.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No fields to update" });
+    }
+
+    // Anything outside the allowed list (email, password, role, status...)
+    // is refused outright rather than silently ignored
+    const unknown = keys.filter((k) => !ALLOWED_FIELDS.includes(k));
+    if (unknown.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `These fields can't be updated: ${unknown.join(", ")}`,
+      });
+    }
+
+    const updates = {};
+
+    for (const [field, { label, max }] of Object.entries(TEXT_FIELDS)) {
+      if (!keys.includes(field)) continue;
+
+      const value = body[field];
+      if (typeof value !== "string") {
+        return res
+          .status(400)
+          .json({ success: false, message: `${label} must be text` });
+      }
+
+      const trimmed = value.trim();
+      if (trimmed.length < 2 || trimmed.length > max) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} must be between 2 and ${max} characters`,
+        });
+      }
+      if (!TEXT_REGEX.test(trimmed)) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} contains characters that aren't allowed`,
+        });
+      }
+
+      updates[field] = trimmed;
+    }
+
+    if (keys.includes("gender")) {
+      if (!GENDERS.includes(body.gender)) {
+        return res.status(400).json({
+          success: false,
+          message: `Gender must be one of: ${GENDERS.join(", ")}`,
+        });
+      }
+      updates.gender = body.gender;
+    }
+
+    if (keys.includes("dob")) {
+      const raw = body.dob;
+      if (typeof raw !== "string" || !DOB_REGEX.test(raw)) {
+        return res.status(400).json({
+          success: false,
+          message: "Date of birth must be in YYYY-MM-DD format",
+        });
+      }
+
+      const date = new Date(`${raw}T00:00:00.000Z`);
+      // the round trip rejects dates like 2024-02-31
+      if (
+        Number.isNaN(date.getTime()) ||
+        date.toISOString().slice(0, 10) !== raw
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Date of birth is not a valid date",
+          });
+      }
+      if (date > new Date()) {
+        return res.status(400).json({
+          success: false,
+          message: "Date of birth can't be in the future",
+        });
+      }
+      if (date < new Date("1900-01-01T00:00:00.000Z")) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Date of birth is too far in the past",
+          });
+      }
+
+      updates.dob = date;
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true, runValidators: true },
+    )
+      .select(SAFE_USER_FIELDS)
+      .lean();
+
+    if (!updated) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated",
+      user: updated,
+    });
+  } catch (error) {
+    console.error("updateProfile failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
+  }
+};
+
+const updateAvatar = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).select("status avatarFileId");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (user.status !== "verified") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Please verify your account first" });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Please choose an image" });
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Image must be 2MB or smaller" });
+    }
+
+    // Checks the real file content, not the type the browser claims
+    const verified = await verifyImageBuffer(file.buffer);
+    if (!verified.valid) {
+      return res.status(400).json({ success: false, message: verified.reason });
+    }
+    if (!AVATAR_EXTENSIONS.includes(verified.ext)) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile picture must be a JPG, PNG or WebP image",
+      });
+    }
+
+    let uploaded;
+    try {
+      uploaded = await imagekit.upload({
+        file: file.buffer,
+        fileName: `avatar-${userId}.${verified.ext}`,
+        folder: "/govolo/avatars",
+        useUniqueFileName: true,
+      });
+    } catch (uploadError) {
+      console.error("Avatar upload failed:", uploadError);
+      return res.status(502).json({
+        success: false,
+        message: "We couldn't upload your image. Please try again.",
+      });
+    }
+
+    let updated;
+    try {
+      updated = await User.findByIdAndUpdate(
+        userId,
+        { $set: { avatar: uploaded.url, avatarFileId: uploaded.fileId } },
+        { new: true },
+      )
+        .select(SAFE_USER_FIELDS)
+        .lean();
+    } catch (dbError) {
+      // the new file is useless now, so don't leave it behind
+      imagekit
+        .deleteFile(uploaded.fileId)
+        .catch((e) => console.error("Cleanup failed:", e));
+      throw dbError;
+    }
+
+    if (!updated) {
+      imagekit
+        .deleteFile(uploaded.fileId)
+        .catch((e) => console.error("Cleanup failed:", e));
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Remove the previous avatar. Failing here must not fail the request.
+    if (user.avatarFileId) {
+      imagekit
+        .deleteFile(user.avatarFileId)
+        .catch((e) => console.error("Old avatar cleanup failed:", e));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile picture updated",
+      user: updated,
+    });
+  } catch (error) {
+    console.error("updateAvatar failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
   }
 };
 // lsllee
