@@ -18,12 +18,14 @@ const { sendOTPEmail } = require("../services/emailService");
 const Otp = require("../models/Otp");
 const ResetToken = require("../models/ResetToken");
 const AdminRequest = require("../models/AdminRequest");
+const mongoose = require("mongoose");
 
 const imagekit = require("../config/imagekit");
 const verifyImageBuffer = require("../services/verifyImage");
 
 const SAFE_USER_FIELDS =
-  "-password -refreshToken -refreshTokenExpiresAt -avatarFileId -__v";
+  "firstName lastName email status gender country city dob avatar";
+
 
 const AVATAR_EXTENSIONS = ["jpg", "png", "webp"];
 
@@ -1227,20 +1229,20 @@ const updateAvatar = async (req, res) => {
     }
 
     let uploaded;
-    try {
-      uploaded = await imagekit.upload({
-        file: file.buffer,
-        fileName: `avatar-${userId}.${verified.ext}`,
-        folder: "/govolo/avatars",
-        useUniqueFileName: true,
-      });
-    } catch (uploadError) {
-      console.error("Avatar upload failed:", uploadError);
-      return res.status(502).json({
-        success: false,
-        message: "We couldn't upload your image. Please try again.",
-      });
-    }
+   try {
+     uploaded = await imagekit.files.upload({
+       file: file.buffer.toString("base64"),
+       fileName: `avatar-${userId}.${verified.ext}`,
+       folder: "/govolo/avatars",
+       useUniqueFileName: true,
+     });
+   } catch (uploadError) {
+     console.error("Avatar upload failed:", uploadError);
+     return res.status(502).json({
+       success: false,
+       message: "We couldn't upload your image. Please try again.",
+     });
+   }
 
     let updated;
     try {
@@ -1253,15 +1255,15 @@ const updateAvatar = async (req, res) => {
         .lean();
     } catch (dbError) {
       // the new file is useless now, so don't leave it behind
-      imagekit
-        .deleteFile(uploaded.fileId)
+      imagekit.files
+        .delete(uploaded.fileId)
         .catch((e) => console.error("Cleanup failed:", e));
       throw dbError;
     }
 
     if (!updated) {
-      imagekit
-        .deleteFile(uploaded.fileId)
+      imagekit.files
+        .delete(uploaded.fileId)
         .catch((e) => console.error("Cleanup failed:", e));
       return res
         .status(404)
@@ -1269,11 +1271,11 @@ const updateAvatar = async (req, res) => {
     }
 
     // Remove the previous avatar. Failing here must not fail the request.
-    if (user.avatarFileId) {
-      imagekit
-        .deleteFile(user.avatarFileId)
-        .catch((e) => console.error("Old avatar cleanup failed:", e));
-    }
+   if (user.avatarFileId) {
+     imagekit.files
+       .delete(user.avatarFileId)
+       .catch((e) => console.error("Old avatar cleanup failed:", e));
+   }
 
     return res.status(200).json({
       success: true,
@@ -1301,4 +1303,6 @@ module.exports = {
   verifyResetOTP,
   getMe,
   requestAdminAccess,
+  updateProfile,
+  updateAvatar,
 };

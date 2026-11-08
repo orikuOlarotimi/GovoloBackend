@@ -14,7 +14,10 @@ const {
   verifyOTP,
   verifyResetOTP,
   getMe,
+  updateAvatar,
+  updateProfile,
 } = require("../controllers/authControler");
+const upload = require("../config/multer");
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
@@ -34,7 +37,28 @@ router.post("/reset-password", resetPassword);
 
 // Token
 router.post("/refresh-token", refreshTokenHandler);
-router.get("/me", protect, getMe )
+router.get("/me", protect, getMe)
+
+router.patch("/me", protect, updateProfile);
+
+router.patch(
+  "/me/avatar",
+  protect,
+  upload.single("avatar"),
+  (err, req, res, next) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message:
+          err.code === "LIMIT_FILE_SIZE"
+            ? "Image must be 2MB or smaller"
+            : err.message,
+      });
+    }
+    next();
+  },
+  updateAvatar,
+);
 
 
 module.exports = router;
