@@ -4,7 +4,7 @@ const SibApiV3Sdk = require("sib-api-v3-sdk");
 const client = SibApiV3Sdk.ApiClient.instance;
 const apiKey = client.authentications["api-key"];
 apiKey.apiKey = process.env.BREVO_API_KEY;
-
+const accountApi = new SibApiV3Sdk.AccountApi();
 
 const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
@@ -79,5 +79,28 @@ const sendContactEmail = async ({ name, email, subject, message }) => {
   }
 };
 
+const sendEmail = async ({ to, subject, html, text }) => {
+  try {
+    await emailApi.sendTransacEmail({
+      sender: { email: process.env.EMAIL_FROM, name: "GoVolo" },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    });
+  } catch (error) {
+    console.error("Email error:", error.response?.body || error.message);
+    throw new Error("Failed to send email");
+  }
+};
 
-module.exports = { sendOTPEmail, sendContactEmail };
+// Lets the worker confirm the API key works before it takes any jobs
+const checkEmailService = () => accountApi.getAccount();
+
+
+module.exports = {
+  sendOTPEmail,
+  sendContactEmail,
+  sendEmail,
+  checkEmailService,
+};

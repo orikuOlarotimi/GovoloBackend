@@ -21,6 +21,8 @@ const blogRoutes = require("./routes/blogRoutes");
 const packageRoutes = require("./routes/packageRoutes")
 const contacRoutes = require('./routes/contactRoutes');
 
+const NewsletterRoutes = require('./routes/newsletterRoutes')
+
 
 app.use(
   cors({
@@ -39,6 +41,7 @@ app.use("/api/packages", packageRoutes)
 app.use("/api/blogs", blogRoutes);
 
 app.use("/api/contact", contacRoutes);
+app.use("/api/newsletter", NewsletterRoutes)
 
 app.get("/", (req, res) => {
   res.send("Travel API is running...");

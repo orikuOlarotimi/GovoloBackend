@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node Index.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "worker": "node workers/index.js"
   },
   "author": "rotimi",
   "license": "ISC",
@@ -15,11 +16,13 @@
     "@imagekit/nodejs": "^7.11.0",
     "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^6.7.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "file-type": "^22.0.2",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.5.0",
     "multer": "^2.2.0",
