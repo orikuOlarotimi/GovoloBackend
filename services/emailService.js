@@ -36,7 +36,7 @@ const sendOTPEmail = async (email, otp) => {
       `,
     });
   } catch (error) {
-    console.error("Email error:", error.response?.body || error.message);
+    
     throw new Error("Failed to send OTP email");
   }
 };
@@ -74,7 +74,7 @@ const sendContactEmail = async ({ name, email, subject, message }) => {
       `,
     });
   } catch (error) {
-    console.error("Email error:", error.response?.body || error.message);
+   
     throw new Error("Failed to send contact email");
   }
 };
@@ -89,7 +89,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
       textContent: text,
     });
   } catch (error) {
-    console.error("Email error:", error.response?.body || error.message);
+    
     throw new Error("Failed to send email");
   }
 };

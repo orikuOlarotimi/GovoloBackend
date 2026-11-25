@@ -340,7 +340,6 @@ const createBooking = async (req, res) => {
      if (error.name === "ValidationError") {
        return res.status(400).json({ success: false, message: error.message });
      }
-     console.error("createBooking error:", error);
      return res
        .status(500)
        .json({ success: false, message: "Failed to create booking" });
@@ -534,7 +533,6 @@ const createDestinationBooking = async (req, res) => {
     if (error.name === "ValidationError") {
       return res.status(400).json({ success: false, message: error.message });
     }
-    console.error("createDestinationBooking error:", error);
     return res
       .status(500)
       .json({ success: false, message: "Failed to create booking" });
@@ -730,7 +728,7 @@ const createPackageBooking = async (req, res) => {
     if (error.name === "ValidationError") {
       return res.status(400).json({ success: false, message: error.message });
     }
-    console.error("createPackageBooking error:", error);
+   
     return res
       .status(500)
       .json({ success: false, message: "Failed to create booking" });
@@ -992,7 +990,7 @@ const getAdminBookings = async (req, res) => {
       bookings,
     });
   } catch (error) {
-    console.error("getAdminBookings failed:", error);
+    
     return res
       .status(500)
       .json({ success: false, message: "Something went wrong" });
@@ -1097,7 +1095,6 @@ const respondToBooking = async (req, res) => {
       booking: updated,
     });
   } catch (error) {
-    console.error("respondToBooking failed:", error);
     return res
       .status(500)
       .json({ success: false, message: "Something went wrong" });
@@ -1152,7 +1149,7 @@ const getAdminBookingById = async (req, res) => {
 
     return res.status(200).json({ success: true, booking });
   } catch (error) {
-    console.error("getAdminBookingById failed:", error);
+ 
     return res
       .status(500)
       .json({ success: false, message: "Something went wrong" });

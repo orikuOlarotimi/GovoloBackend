@@ -231,7 +231,7 @@ const getPackage = async (req, res) => {
 
     return res.status(200).json({ success: true, package: pkg });
   } catch (error) {
-    console.error("getPackage error:", error);
+   
     return res.status(500).json({
       success: false,
       message: "Something went wrong while fetching the package",
@@ -521,7 +521,7 @@ const editPackage = async (req, res) => {
       });
     }
 
-    console.log(error);
+ 
     res.status(500).json({
       success: false,
       message: "Something went wrong while updating the package",

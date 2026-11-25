@@ -175,7 +175,7 @@ const createTestimonial = async (req, res) => {
       success: false,
       message: "Something went wrong while submitting the rating",
     });
-    console.log(error)
+  
   }
 };
 

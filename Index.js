@@ -22,6 +22,7 @@ const packageRoutes = require("./routes/packageRoutes")
 const contacRoutes = require('./routes/contactRoutes');
 
 const NewsletterRoutes = require('./routes/newsletterRoutes')
+const { apiLogger: log } = require("./utils/logger");
 
 
 app.use(
@@ -50,6 +51,18 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 
-app.listen(PORT, () => {
-    console.log(`server runnimg on ${PORT}`)
-})
+const server = app.listen(PORT, () => {
+  log.info(
+    { event: "server.started", port: PORT, nodeVersion: process.version },
+    "Server started",
+  );
+});
+
+server.on("error", (err) => {
+  log.fatal(
+    { event: "server.start_failed", err, port: PORT },
+    "Server failed to start",
+  );
+  // short delay so the last line has time to reach Axiom before the process ends
+  setTimeout(() => process.exit(1), 1000);
+});

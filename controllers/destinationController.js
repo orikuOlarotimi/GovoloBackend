@@ -75,8 +75,7 @@ const addDestination = async (req, res) => {
         message: "You must be logged in to perform this action",
       });
     }
-    // console.log(req.user.rolePrivilege);
-    // console.log(req.user);
+    
     const user = await User.findById(req.user.id)
 
     if (!user) {
@@ -436,7 +435,7 @@ const addDestination = async (req, res) => {
       });
     }
 
-    console.log(error);
+    
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating the destination",
@@ -541,7 +540,7 @@ const getMyDestinations = async (req, res) => {
       destinations, // [] when the admin has none
     });
   } catch (error) {
-    console.log(error);
+   
     res.status(500).json({
       success: false,
       message: "Something went wrong while fetching your destinations",
@@ -1002,7 +1001,7 @@ const editDestination = async (req, res) => {
       });
     }
 
-    console.log(error);
+   
     res.status(500).json({
       success: false,
       message: "Something went wrong while updating the destination",

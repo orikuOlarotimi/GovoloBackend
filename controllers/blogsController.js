@@ -46,7 +46,7 @@ const getAllBlogs = async (req, res) => {
       blogs: blogsWithTrending,
     });
   } catch (error) {
-    console.error("getAllBlogs error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch blogs",
@@ -374,7 +374,7 @@ const createBlog = async (req, res) => {
       });
     }
 
-    console.log(error);
+  
     res.status(500).json({
       success: false,
       message: "Something went wrong while creating the blog post",

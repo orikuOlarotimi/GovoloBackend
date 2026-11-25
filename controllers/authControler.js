@@ -1178,7 +1178,6 @@ const updateProfile = async (req, res) => {
       user: updated,
     });
   } catch (error) {
-    console.error("updateProfile failed:", error);
     return res
       .status(500)
       .json({ success: false, message: "Something went wrong" });
@@ -1237,7 +1236,6 @@ const updateAvatar = async (req, res) => {
        useUniqueFileName: true,
      });
    } catch (uploadError) {
-     console.error("Avatar upload failed:", uploadError);
      return res.status(502).json({
        success: false,
        message: "We couldn't upload your image. Please try again.",
@@ -1283,7 +1281,6 @@ const updateAvatar = async (req, res) => {
       user: updated,
     });
   } catch (error) {
-    console.error("updateAvatar failed:", error);
     return res
       .status(500)
       .json({ success: false, message: "Something went wrong" });
