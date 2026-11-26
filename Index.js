@@ -4,6 +4,7 @@ const connectDB = require("./config/db");
 dotenv.config();
 const app = express();
 connectDB();
+const { startWorker } = require("./workers");
 app.use(express.json());
 const cookieParser = require("cookie-parser");
 const assignVisitorId = require("./midleware/visitorId");
@@ -49,14 +50,30 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+let emailWorker;
 
-
-const server = app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", async () => {
   log.info(
     { event: "server.started", port: PORT, nodeVersion: process.version },
     "Server started",
   );
+  try {
+    emailWorker = await startWorker();
+  } catch (err) {
+    // The API keeps serving even if the worker fails to start
+    log.error({ event: "worker.start_failed", err }, "Worker failed to start");
+  }
 });
+
+const shutdown = async (signal) => {
+  log.info({ event: "server.stopping", signal }, "Shutting down");
+  server.close();
+  if (emailWorker) await emailWorker.close();
+  await mongoose.disconnect();
+  setTimeout(() => process.exit(0), 500);
+};
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 server.on("error", (err) => {
   log.fatal(
