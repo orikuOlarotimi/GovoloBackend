@@ -8,6 +8,7 @@ const { startWorker } = require("./workers");
 app.use(express.json());
 const cookieParser = require("cookie-parser");
 const assignVisitorId = require("./midleware/visitorId");
+const mongoose = require("mongoose");
 
 const cors = require("cors");
 app.use(cookieParser());
@@ -60,8 +61,15 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
   try {
     emailWorker = await startWorker();
   } catch (err) {
-    // The API keeps serving even if the worker fails to start
-    log.error({ event: "worker.start_failed", err }, "Worker failed to start");
+    log.error(
+      {
+        event: "worker.start_failed",
+        err,
+        status: err.status || err.response?.status,
+        body: err.response?.body || err.response?.text,
+      },
+      "Worker failed to start",
+    );
   }
 });
 
