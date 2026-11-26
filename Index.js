@@ -27,7 +27,7 @@ const { apiLogger: log } = require("./utils/logger");
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   }),
 );
@@ -51,7 +51,7 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   log.info(
     { event: "server.started", port: PORT, nodeVersion: process.version },
     "Server started",
